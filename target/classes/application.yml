@@ -1,0 +1,55 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: hourslot-backend
+
+  # Database configuration (Neon DB PostgreSQL)
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://ep-rough-lab-ay5c9073.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require}
+    username: ${DATABASE_USER:neondb_owner}
+    password: ${DATABASE_PASSWORD:npg_TKPjdIqb34rC}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Redis Configuration for caching and slot locking
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 60000
+
+# Custom app configurations
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:9a4f2c8d3b7a1e5f8g0h2i4j6k8l0m2n4o6p8q0r2s4t6u8v0w2x4y6z8A0B2C4D}
+      expiration-ms: 86400000 # 24 Hours
+      refresh-expiration-ms: 604800000 # 7 Days
+
+  # Cloudflare R2 Storage (S3 API compatible)
+  r2:
+    endpoint: ${R2_ENDPOINT:https://<cloudflare-account-id>.r2.cloudflarestorage.com}
+    access-key: ${R2_ACCESS_KEY:access_key_placeholder}
+    secret-key: ${R2_SECRET_KEY:secret_key_placeholder}
+    bucket-name: ${R2_BUCKET_NAME:hourslot-media}
+    public-url: ${R2_PUBLIC_URL:https://pub-example.r2.dev}
+
+  # Stripe Payments Configuration
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_placeholder}
+    commission-percentage: 10.0 # Platform commission
