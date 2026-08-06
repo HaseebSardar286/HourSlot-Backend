@@ -48,4 +48,8 @@ public class Business {
         this.verified = false; // defaults to false until platform admin approves
         this.commissionRate = 10.0; // default 10%
     }
+
+    public void setVerified(boolean b) {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
 }
