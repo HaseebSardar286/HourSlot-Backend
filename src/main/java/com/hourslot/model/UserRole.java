@@ -4,5 +4,6 @@ public enum UserRole {
     CUSTOMER,
     SUPER_ADMIN,
     BUSINESS_OWNER,
-    BUSINESS_STAFF
+    BUSINESS_STAFF,
+    ADMIN
 }
