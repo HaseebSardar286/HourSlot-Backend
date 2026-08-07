@@ -7,6 +7,7 @@ com\hourslot\model\Break.class
 com\hourslot\service\AvailabilityService$TimeInterval.class
 com\hourslot\model\Staff.class
 com\hourslot\model\Break$BreakBuilder.class
+com\hourslot\model\SystemConfig$SystemConfigBuilder.class
 com\hourslot\security\AuthEntryPointJwt.class
 com\hourslot\controller\BusinessController$HolidayRequest.class
 com\hourslot\model\Holiday.class
@@ -15,8 +16,10 @@ com\hourslot\model\Booking.class
 com\hourslot\controller\BusinessController$BreakRequest.class
 com\hourslot\service\AvailabilityService$Slot.class
 com\hourslot\model\Booking$BookingBuilder.class
+com\hourslot\model\Review.class
 com\hourslot\model\Staff$StaffBuilder.class
 com\hourslot\repository\BookingRepository.class
+com\hourslot\model\Favorite$FavoriteBuilder.class
 com\hourslot\security\CustomUserDetails.class
 com\hourslot\security\JwtUtils.class
 com\hourslot\controller\BusinessController$WorkingHourRequest.class
@@ -32,6 +35,7 @@ com\hourslot\dto\MessageResponse.class
 com\hourslot\model\Service.class
 com\hourslot\repository\CustomerRepository.class
 com\hourslot\model\Branch$BranchBuilder.class
+com\hourslot\model\Favorite.class
 com\hourslot\controller\BusinessController$StaffRequest.class
 com\hourslot\repository\UserRepository.class
 com\hourslot\dto\TokenRefreshResponse.class
@@ -46,6 +50,7 @@ com\hourslot\model\Branch.class
 com\hourslot\controller\BusinessController.class
 com\hourslot\security\CustomUserDetailsService.class
 com\hourslot\model\UserRole.class
+com\hourslot\model\BusinessStatus.class
 com\hourslot\model\User.class
 com\hourslot\repository\StaffRepository.class
 com\hourslot\model\Business.class
@@ -53,9 +58,11 @@ com\hourslot\model\AuditLog$AuditLogBuilder.class
 com\hourslot\model\AuditLog.class
 com\hourslot\dto\RegisterRequest.class
 com\hourslot\controller\AdminController.class
+com\hourslot\model\SystemConfig.class
 com\hourslot\HourSlotApplication.class
 com\hourslot\model\Customer$CustomerBuilder.class
 com\hourslot\dto\TokenRefreshRequest.class
 com\hourslot\controller\BusinessController$BusinessRegistrationRequest.class
 com\hourslot\dto\LoginRequest.class
 com\hourslot\repository\BranchRepository.class
+com\hourslot\model\Review$ReviewBuilder.class

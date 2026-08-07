@@ -28,6 +28,14 @@ public class Business {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "category")
+    private String category;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    @Builder.Default
+    private BusinessStatus status = BusinessStatus.PENDING;
+
     @Column(name = "is_verified", nullable = false)
     private boolean verified;
 
@@ -39,17 +47,28 @@ public class Business {
 
     private double rating;
 
+    @Column(name = "rejection_reason")
+    private String rejectionReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
-        this.verified = false; // defaults to false until platform admin approves
-        this.commissionRate = 10.0; // default 10%
+        this.updatedAt = LocalDateTime.now();
+        this.verified = false;
+        this.commissionRate = 10.0;
+        if (this.status == null) {
+            this.status = BusinessStatus.PENDING;
+        }
     }
 
-    public void setVerified(boolean b) {
-        throw new UnsupportedOperationException("Not supported yet.");
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }

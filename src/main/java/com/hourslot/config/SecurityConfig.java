@@ -67,8 +67,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**", "/error").permitAll()
                 .requestMatchers("/api/public/**").permitAll() // Categories, location discover
                 .requestMatchers("/api/customer/**").hasRole("CUSTOMER")
-                .requestMatchers("/api/business/**").hasAnyRole("BUSINESS_ADMIN", "BUSINESS_STAFF")
-                .requestMatchers("/api/admin/**").hasRole("PLATFORM_ADMIN")
+                .requestMatchers("/api/business/**").hasAnyRole("BUSINESS_OWNER", "BUSINESS_STAFF")
+                .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
                 .anyRequest().authenticated()
             );
 

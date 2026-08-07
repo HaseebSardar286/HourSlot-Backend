@@ -15,10 +15,14 @@ D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\BookingStatus.j
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Branch.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Break.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Business.java
+D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\BusinessStatus.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Customer.java
+D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Favorite.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Holiday.java
+D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Review.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Service.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\Staff.java
+D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\SystemConfig.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\User.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\UserRole.java
 D:\Appointment\HourSlot-Backend\src\main\java\com\hourslot\model\WorkingHour.java

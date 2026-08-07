@@ -83,7 +83,7 @@ public class BusinessController {
     }
 
     @PostMapping("/register")
-    @PreAuthorize("hasRole('BUSINESS_ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
     public ResponseEntity<?> registerBusiness(
             @Valid @RequestBody BusinessRegistrationRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -109,7 +109,7 @@ public class BusinessController {
     }
 
     @GetMapping("/profile")
-    @PreAuthorize("hasAnyRole('BUSINESS_ADMIN', 'BUSINESS_STAFF')")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<?> getBusinessProfile(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = businessRepository.findByOwner(user)
@@ -122,7 +122,7 @@ public class BusinessController {
     // ==========================================================================
 
     @PostMapping("/branches")
-    @PreAuthorize("hasRole('BUSINESS_ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
     public ResponseEntity<?> addBranch(
             @Valid @RequestBody BranchRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -152,7 +152,7 @@ public class BusinessController {
     }
 
     @GetMapping("/branches")
-    @PreAuthorize("hasAnyRole('BUSINESS_ADMIN', 'BUSINESS_STAFF')")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<List<Branch>> getBranches(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = businessRepository.findByOwner(user)
@@ -167,7 +167,7 @@ public class BusinessController {
     // ==========================================================================
 
     @PostMapping("/services")
-    @PreAuthorize("hasRole('BUSINESS_ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
     public ResponseEntity<?> addService(
             @Valid @RequestBody ServiceRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -190,7 +190,7 @@ public class BusinessController {
     }
 
     @GetMapping("/services")
-    @PreAuthorize("hasAnyRole('BUSINESS_ADMIN', 'BUSINESS_STAFF')")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<List<Service>> getServices(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = businessRepository.findByOwner(user)
@@ -205,7 +205,7 @@ public class BusinessController {
     // ==========================================================================
 
     @PostMapping("/staff")
-    @PreAuthorize("hasRole('BUSINESS_ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
     public ResponseEntity<?> addStaff(
             @Valid @RequestBody StaffRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -241,7 +241,7 @@ public class BusinessController {
     }
 
     @GetMapping("/branches/{branchId}/staff")
-    @PreAuthorize("hasAnyRole('BUSINESS_ADMIN', 'BUSINESS_STAFF')")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<?> getStaffByBranch(
             @PathVariable Long branchId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -306,7 +306,7 @@ public class BusinessController {
     }
 
     @PostMapping("/working-hours")
-    @PreAuthorize("hasRole('BUSINESS_ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
     public ResponseEntity<?> configureWorkingHour(
             @Valid @RequestBody WorkingHourRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -344,7 +344,7 @@ public class BusinessController {
     }
 
     @PostMapping("/working-hours/{workingHourId}/breaks")
-    @PreAuthorize("hasRole('BUSINESS_ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
     public ResponseEntity<?> addBreakToWorkingHour(
             @PathVariable Long workingHourId,
             @Valid @RequestBody BreakRequest request) {
@@ -363,7 +363,7 @@ public class BusinessController {
     }
 
     @PostMapping("/holidays")
-    @PreAuthorize("hasRole('BUSINESS_ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
     public ResponseEntity<?> addHoliday(
             @Valid @RequestBody HolidayRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {

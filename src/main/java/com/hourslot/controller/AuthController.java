@@ -1,9 +1,8 @@
 package com.hourslot.controller;
 
 import com.hourslot.dto.*;
-import com.hourslot.model.Customer;
-import com.hourslot.model.User;
-import com.hourslot.model.UserRole;
+import com.hourslot.model.*;
+import com.hourslot.repository.BusinessRepository;
 import com.hourslot.repository.CustomerRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.security.CustomUserDetails;
@@ -36,6 +35,9 @@ public class AuthController {
 
     @Autowired
     private CustomerRepository customerRepository;
+
+    @Autowired
+    private BusinessRepository businessRepository;
 
     @Autowired
     private PasswordEncoder encoder;
@@ -113,6 +115,23 @@ public class AuthController {
                     .user(savedUser)
                     .build();
             customerRepository.save(customer);
+        }
+
+        // If registered user is a Business Owner, auto-create a Business stub in PENDING state
+        if (userRole == UserRole.BUSINESS_OWNER) {
+            String businessName = signUpRequest.getBusinessName();
+            if (businessName == null || businessName.isBlank()) {
+                businessName = savedUser.getFirstName() + "'s Business";
+            }
+
+            Business business = Business.builder()
+                    .name(businessName)
+                    .owner(savedUser)
+                    .description(signUpRequest.getBusinessDescription())
+                    .category(signUpRequest.getBusinessCategory())
+                    .status(BusinessStatus.PENDING)
+                    .build();
+            businessRepository.save(business);
         }
 
         return ResponseEntity.ok(new MessageResponse("User registered successfully!"));

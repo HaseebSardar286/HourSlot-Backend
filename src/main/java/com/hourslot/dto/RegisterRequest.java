@@ -21,4 +21,10 @@ public class RegisterRequest {
     private String firstName;
     private String lastName;
     private String phoneNumber;
+
+    // Optional business onboarding fields (used when role = BUSINESS_ADMIN)
+    private String businessName;
+    private String businessCategory;
+    private String businessDescription;
 }
+
