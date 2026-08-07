@@ -5,6 +5,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+import org.springframework.context.annotation.Bean;
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.Statement;
+
 @SpringBootApplication
 @EnableCaching
 @EnableScheduling
@@ -42,5 +47,18 @@ public class HourSlotApplication {
             }
         }
         SpringApplication.run(HourSlotApplication.class, args);
+    }
+
+    @Bean
+    public org.springframework.boot.CommandLineRunner dropCheckConstraint(DataSource dataSource) {
+        return args -> {
+            try (Connection conn = dataSource.getConnection();
+                 Statement stmt = conn.createStatement()) {
+                stmt.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
+                System.out.println("Successfully dropped users_role_check check constraint if it existed.");
+            } catch (Exception e) {
+                System.err.println("Warning: Could not drop users_role_check constraint: " + e.getMessage());
+            }
+        };
     }
 }
