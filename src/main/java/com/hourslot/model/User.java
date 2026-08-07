@@ -32,7 +32,8 @@ public class User {
 
     @NotNull
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "user_role_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private UserRole role;
 
     @Column(name = "first_name")
