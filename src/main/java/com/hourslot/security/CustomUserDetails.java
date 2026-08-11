@@ -21,6 +21,7 @@ public class CustomUserDetails implements UserDetails {
     @JsonIgnore
     private String password;
     private UserRole role;
+    private boolean active;
     private Collection<? extends GrantedAuthority> authorities;
 
     public static CustomUserDetails build(User user) {
@@ -32,6 +33,7 @@ public class CustomUserDetails implements UserDetails {
                 user.getEmail(),
                 user.getPassword(),
                 user.getRole(),
+                user.isActive(),
                 Collections.singletonList(authority)
         );
     }
@@ -68,6 +70,6 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return active;
     }
 }

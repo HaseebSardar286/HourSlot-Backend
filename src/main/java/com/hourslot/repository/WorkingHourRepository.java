@@ -10,5 +10,8 @@ import java.util.List;
 @Repository
 public interface WorkingHourRepository extends JpaRepository<WorkingHour, Long> {
     List<WorkingHour> findByBranch(Branch branch);
+    List<WorkingHour> findByBranchOrderByDayOfWeekAsc(Branch branch);
+    List<WorkingHour> findByBranchAndStaffIsNullOrderByDayOfWeekAsc(Branch branch);
     List<WorkingHour> findByStaff(Staff staff);
+    List<WorkingHour> findByStaffOrderByDayOfWeekAsc(Staff staff);
 }

@@ -43,6 +43,7 @@ public class JwtUtils {
                 .subject(userPrincipal.getUsername())
                 .claim("userId", userPrincipal.getId())
                 .claim("roles", roles)
+                .claim("tokenType", "access")
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + jwtExpirationMs))
                 .signWith(getSignKey())
@@ -53,10 +54,41 @@ public class JwtUtils {
         CustomUserDetails userPrincipal = (CustomUserDetails) authentication.getPrincipal();
         return Jwts.builder()
                 .subject(userPrincipal.getUsername())
+                .claim("userId", userPrincipal.getId())
+                .claim("tokenType", "refresh")
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + jwtRefreshExpirationMs))
                 .signWith(getSignKey())
                 .compact();
+    }
+
+    public boolean isRefreshToken(String token) {
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(getSignKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            String type = claims.get("tokenType", String.class);
+            // Legacy tokens without tokenType are treated as access tokens
+            return "refresh".equals(type);
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    public boolean isAccessToken(String token) {
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(getSignKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            String type = claims.get("tokenType", String.class);
+            return type == null || "access".equals(type);
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
     }
 
     public String getUsernameFromJwtToken(String token) {

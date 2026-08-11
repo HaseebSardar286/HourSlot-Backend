@@ -5,12 +5,15 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 @Entity
 @Table(name = "businesses")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Business {
 
     @Id
@@ -28,8 +31,18 @@ public class Business {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "category")
-    private String category;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "primary_category_id")
+    private Category primaryCategory;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "business_secondary_categories",
+        joinColumns = @JoinColumn(name = "business_id"),
+        inverseJoinColumns = @JoinColumn(name = "category_id")
+    )
+    @JsonIgnoreProperties("subcategories")
+    private java.util.List<Category> secondaryCategories;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -50,6 +63,15 @@ public class Business {
     @Column(name = "rejection_reason")
     private String rejectionReason;
 
+    @Column(name = "slug", unique = true)
+    private String slug;
+
+    @Column(name = "registration_number")
+    private String registrationNumber;
+
+    @Column(name = "gallery_urls", columnDefinition = "TEXT")
+    private String galleryUrls;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -65,6 +87,18 @@ public class Business {
         if (this.status == null) {
             this.status = BusinessStatus.PENDING;
         }
+        if (this.slug == null || this.slug.isBlank()) {
+            this.slug = slugify(this.name);
+        }
+    }
+
+    private String slugify(String text) {
+        if (text == null || text.isBlank()) return "";
+        return text.toLowerCase()
+            .replaceAll("[^a-z0-9\\s-]", "")
+            .replaceAll("\\s+", "-")
+            .replaceAll("-+", "-")
+            .trim();
     }
 
     @PreUpdate

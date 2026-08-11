@@ -4,6 +4,7 @@ import com.hourslot.model.Booking;
 import com.hourslot.model.BookingStatus;
 import com.hourslot.model.Branch;
 import com.hourslot.model.Staff;
+import com.hourslot.model.Customer;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
@@ -25,4 +26,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             LocalDateTime end, 
             List<BookingStatus> statuses
     );
+
+    List<Booking> findByBranch(Branch branch);
+    List<Booking> findByBranchOrderByBookingTimeDesc(Branch branch);
+    List<Booking> findByCustomerOrderByBookingTimeDesc(Customer customer);
 }

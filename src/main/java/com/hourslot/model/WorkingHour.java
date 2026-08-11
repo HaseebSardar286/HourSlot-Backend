@@ -38,4 +38,8 @@ public class WorkingHour {
 
     @Column(nullable = false)
     private boolean closed;
+
+    @OneToMany(mappedBy = "workingHour", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties("workingHour")
+    private java.util.List<Break> breaks;
 }

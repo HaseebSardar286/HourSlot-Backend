@@ -11,7 +11,10 @@ import java.util.List;
 @Repository
 public interface HolidayRepository extends JpaRepository<Holiday, Long> {
     List<Holiday> findByBranch(Branch branch);
+    List<Holiday> findByBranchOrderByDateAsc(Branch branch);
+    List<Holiday> findByBranchAndStaffIsNullOrderByDateAsc(Branch branch);
     List<Holiday> findByStaff(Staff staff);
+    List<Holiday> findByStaffOrderByDateAsc(Staff staff);
     List<Holiday> findByBranchAndDate(Branch branch, LocalDate date);
     List<Holiday> findByStaffAndDate(Staff staff, LocalDate date);
 }

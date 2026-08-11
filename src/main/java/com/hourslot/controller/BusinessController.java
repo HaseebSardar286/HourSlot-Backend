@@ -38,6 +38,18 @@ public class BusinessController {
     @Autowired
     private StaffRepository staffRepository;
 
+    @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
+    private ServicePackageRepository servicePackageRepository;
+
+    @Autowired
+    private StaffServiceRepository staffServiceRepository;
+
+    @Autowired
+    private TimeOfDayPricingRepository timeOfDayPricingRepository;
+
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
     @Data
@@ -131,9 +143,8 @@ public class BusinessController {
         Business business = businessRepository.findByOwner(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
 
-        if (!business.isVerified()) {
-            return ResponseEntity.badRequest().body(new MessageResponse("Error: Your business profile is not verified yet."));
-        }
+        // Allow setup while PENDING so owners can complete onboarding before admin approval.
+        // Bookings remain blocked until APPROVED + verified.
 
         // Generate JTS coordinates Point geometry
         Point geom = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
@@ -240,6 +251,26 @@ public class BusinessController {
         return ResponseEntity.ok(new MessageResponse("Staff member " + staff.getName() + " added successfully!"));
     }
 
+    @GetMapping("/staff")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<?> getAllStaff(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business;
+        if (user.getRole() == UserRole.BUSINESS_OWNER) {
+            business = businessRepository.findByOwner(user)
+                    .orElseThrow(() -> new RuntimeException("Business not found for owner."));
+        } else {
+            Staff staff = staffRepository.findByUser(user)
+                    .orElseThrow(() -> new RuntimeException("Staff account not found."));
+            business = staff.getBranch().getBusiness();
+        }
+
+        List<Staff> allStaff = branchRepository.findByBusiness(business).stream()
+                .flatMap(b -> staffRepository.findByBranch(b).stream())
+                .toList();
+        return ResponseEntity.ok(allStaff);
+    }
+
     @GetMapping("/branches/{branchId}/staff")
     @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<?> getStaffByBranch(
@@ -249,13 +280,19 @@ public class BusinessController {
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
 
-        // Verify that the branch belongs to the authenticated admin's business
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
-                .orElseThrow(() -> new RuntimeException("Business not found for owner."));
-
-        if (!branch.getBusiness().getId().equals(business.getId())) {
-            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
+        if (user.getRole() == UserRole.BUSINESS_OWNER) {
+            Business business = businessRepository.findByOwner(user)
+                    .orElseThrow(() -> new RuntimeException("Business not found for owner."));
+            if (!branch.getBusiness().getId().equals(business.getId())) {
+                return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
+            }
+        } else {
+            Staff staff = staffRepository.findByUser(user)
+                    .orElseThrow(() -> new RuntimeException("Staff account not found."));
+            if (!staff.getBranch().getId().equals(branchId)) {
+                return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
+            }
         }
 
         List<Staff> staffList = staffRepository.findByBranch(branch);
@@ -393,5 +430,635 @@ public class BusinessController {
 
         holidayRepository.save(holiday);
         return ResponseEntity.ok(new MessageResponse("Holiday date registered successfully!"));
+    }
+
+    @PutMapping("/profile")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> updateBusinessProfile(
+            @Valid @RequestBody BusinessUpdateRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        User owner = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(owner)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+
+        business.setName(request.getName());
+        business.setDescription(request.getDescription());
+        business.setLogoUrl(request.getLogoUrl());
+        business.setRegistrationNumber(request.getRegistrationNumber());
+        business.setGalleryUrls(request.getGalleryUrls());
+
+        if (request.getPrimaryCategoryId() != null) {
+            Category primary = categoryRepository.findById(request.getPrimaryCategoryId())
+                    .orElseThrow(() -> new RuntimeException("Primary category not found."));
+            business.setPrimaryCategory(primary);
+        } else {
+            business.setPrimaryCategory(null);
+        }
+
+        if (request.getSecondaryCategoryIds() != null && !request.getSecondaryCategoryIds().isEmpty()) {
+            List<Category> secondaries = categoryRepository.findAllById(request.getSecondaryCategoryIds());
+            business.setSecondaryCategories(secondaries);
+        } else {
+            business.setSecondaryCategories(new java.util.ArrayList<>());
+        }
+
+        business.setSlug(business.getName().toLowerCase()
+                .replaceAll("[^a-z0-9\\s-]", "")
+                .replaceAll("\\s+", "-")
+                .replaceAll("-+", "-")
+                .trim());
+
+        businessRepository.save(business);
+        return ResponseEntity.ok(new MessageResponse("Business profile updated successfully!"));
+    }
+
+    @GetMapping("/profile-by-slug/{slug}")
+    public ResponseEntity<?> getBusinessProfileBySlug(@PathVariable String slug) {
+        Business business = businessRepository.findBySlug(slug)
+                .orElseThrow(() -> new RuntimeException("Business not found for slug: " + slug));
+        return ResponseEntity.ok(business);
+    }
+
+    @PutMapping("/branches/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> updateBranch(
+            @PathVariable Long id,
+            @Valid @RequestBody BranchRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Branch branch = branchRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Branch not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!branch.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
+        }
+
+        Point geom = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
+
+        branch.setName(request.getName());
+        branch.setAddress(request.getAddress());
+        branch.setGeom(geom);
+        branch.setPhoneNumber(request.getPhoneNumber());
+
+        branchRepository.save(branch);
+        return ResponseEntity.ok(new MessageResponse("Branch updated successfully!"));
+    }
+
+    @DeleteMapping("/branches/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> deleteBranch(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Branch branch = branchRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Branch not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!branch.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
+        }
+
+        branchRepository.delete(branch);
+        return ResponseEntity.ok(new MessageResponse("Branch deleted successfully!"));
+    }
+
+    @PutMapping("/services/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> updateService(
+            @PathVariable Long id,
+            @Valid @RequestBody ServiceRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Service service = serviceRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Service not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!service.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized service access."));
+        }
+
+        service.setName(request.getName());
+        service.setDescription(request.getDescription());
+        service.setPrice(request.getPrice());
+        service.setDurationMinutes(request.getDurationMinutes());
+
+        serviceRepository.save(service);
+        return ResponseEntity.ok(new MessageResponse("Service updated successfully!"));
+    }
+
+    @DeleteMapping("/services/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> deleteService(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Service service = serviceRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Service not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!service.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized service access."));
+        }
+
+        serviceRepository.delete(service);
+        return ResponseEntity.ok(new MessageResponse("Service deleted successfully!"));
+    }
+
+    @PutMapping("/staff/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> updateStaff(
+            @PathVariable Long id,
+            @Valid @RequestBody StaffRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Staff staff = staffRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Staff member not found."));
+
+        Branch branch = branchRepository.findById(request.getBranchId())
+                .orElseThrow(() -> new RuntimeException("Branch not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!staff.getBranch().getBusiness().getId().equals(business.getId()) ||
+            !branch.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        User staffUser = null;
+        if (request.getUserId() != null) {
+            staffUser = userRepository.findById(request.getUserId()).orElse(null);
+        }
+
+        staff.setName(request.getName());
+        staff.setDesignation(request.getDesignation());
+        staff.setBranch(branch);
+        staff.setUser(staffUser);
+
+        staffRepository.save(staff);
+        return ResponseEntity.ok(new MessageResponse("Staff member updated successfully!"));
+    }
+
+    @DeleteMapping("/staff/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> deleteStaff(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Staff staff = staffRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Staff member not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!staff.getBranch().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        staffRepository.delete(staff);
+        return ResponseEntity.ok(new MessageResponse("Staff member deleted successfully!"));
+    }
+
+    @GetMapping("/branches/{branchId}/working-hours")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<?> getWorkingHours(
+            @PathVariable Long branchId,
+            @RequestParam(required = false) Long staffId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new RuntimeException("Branch not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!branch.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        if (staffId != null) {
+            Staff staff = staffRepository.findById(staffId)
+                    .orElseThrow(() -> new RuntimeException("Staff not found."));
+            if (!staff.getBranch().getId().equals(branchId)) {
+                return ResponseEntity.badRequest().body(new MessageResponse("Error: Staff does not belong to this branch."));
+            }
+            List<WorkingHour> whs = workingHourRepository.findByStaffOrderByDayOfWeekAsc(staff);
+            return ResponseEntity.ok(whs);
+        } else {
+            List<WorkingHour> whs = workingHourRepository.findByBranchAndStaffIsNullOrderByDayOfWeekAsc(branch);
+            return ResponseEntity.ok(whs);
+        }
+    }
+
+    @GetMapping("/branches/{branchId}/holidays")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<?> getHolidays(
+            @PathVariable Long branchId,
+            @RequestParam(required = false) Long staffId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new RuntimeException("Branch not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!branch.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        if (staffId != null) {
+            Staff staff = staffRepository.findById(staffId)
+                    .orElseThrow(() -> new RuntimeException("Staff not found."));
+            if (!staff.getBranch().getId().equals(branchId)) {
+                return ResponseEntity.badRequest().body(new MessageResponse("Error: Staff does not belong to this branch."));
+            }
+            List<Holiday> holidays = holidayRepository.findByStaffOrderByDateAsc(staff);
+            return ResponseEntity.ok(holidays);
+        } else {
+            List<Holiday> holidays = holidayRepository.findByBranchAndStaffIsNullOrderByDateAsc(branch);
+            return ResponseEntity.ok(holidays);
+        }
+    }
+
+    @DeleteMapping("/working-hours/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> deleteWorkingHour(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        WorkingHour wh = workingHourRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Working hours record not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!wh.getBranch().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        workingHourRepository.delete(wh);
+        return ResponseEntity.ok(new MessageResponse("Working hour record removed successfully!"));
+    }
+
+    @DeleteMapping("/holidays/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> deleteHoliday(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Holiday holiday = holidayRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Holiday record not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!holiday.getBranch().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        holidayRepository.delete(holiday);
+        return ResponseEntity.ok(new MessageResponse("Holiday date cancelled successfully!"));
+    }
+
+    @DeleteMapping("/breaks/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> deleteBreak(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Break restBreak = breakRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Break record not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!restBreak.getWorkingHour().getBranch().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        breakRepository.delete(restBreak);
+        return ResponseEntity.ok(new MessageResponse("Break period removed successfully!"));
+    }
+
+    @Data
+    public static class BusinessUpdateRequest {
+        @NotBlank
+        private String name;
+        private String description;
+        private String logoUrl;
+        private String registrationNumber;
+        private String galleryUrls;
+        private Long primaryCategoryId;
+        private List<Long> secondaryCategoryIds;
+    }
+
+    // ==========================================================================
+    // SERVICE PACKAGE MANAGEMENT ENDPOINTS
+    // ==========================================================================
+
+    @Data
+    public static class PackageRequest {
+        @NotBlank
+        private String name;
+        private String description;
+        @NotNull
+        private Double price;
+        @NotNull
+        private Integer sessionsCount;
+        private Integer expiryDays;
+        private Boolean active;
+        private List<Long> serviceIds;
+    }
+
+    @GetMapping("/packages")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<List<ServicePackage>> getPackages(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+        return ResponseEntity.ok(servicePackageRepository.findByBusiness(business));
+    }
+
+    @PostMapping("/packages")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> createPackage(
+            @Valid @RequestBody PackageRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+
+        List<Service> services = serviceRepository.findAllById(request.getServiceIds());
+
+        ServicePackage pkg = ServicePackage.builder()
+                .business(business)
+                .name(request.getName())
+                .description(request.getDescription())
+                .price(request.getPrice())
+                .sessionsCount(request.getSessionsCount())
+                .expiryDays(request.getExpiryDays() != null ? request.getExpiryDays() : 0)
+                .active(request.getActive() != null ? request.getActive() : true)
+                .services(services)
+                .build();
+
+        servicePackageRepository.save(pkg);
+        return ResponseEntity.ok(new MessageResponse("Service package created successfully!"));
+    }
+
+    @PutMapping("/packages/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> updatePackage(
+            @PathVariable Long id,
+            @Valid @RequestBody PackageRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        ServicePackage pkg = servicePackageRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Package not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!pkg.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        List<Service> services = serviceRepository.findAllById(request.getServiceIds());
+
+        pkg.setName(request.getName());
+        pkg.setDescription(request.getDescription());
+        pkg.setPrice(request.getPrice());
+        pkg.setSessionsCount(request.getSessionsCount());
+        pkg.setExpiryDays(request.getExpiryDays() != null ? request.getExpiryDays() : 0);
+        if (request.getActive() != null) {
+            pkg.setActive(request.getActive());
+        }
+        pkg.setServices(services);
+
+        servicePackageRepository.save(pkg);
+        return ResponseEntity.ok(new MessageResponse("Service package updated successfully!"));
+    }
+
+    @DeleteMapping("/packages/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> deletePackage(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        ServicePackage pkg = servicePackageRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Package not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+
+        if (!pkg.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        servicePackageRepository.delete(pkg);
+        return ResponseEntity.ok(new MessageResponse("Service package removed successfully."));
+    }
+
+    // ==========================================================================
+    // STAFF SERVICE ASSIGNMENT ENDPOINTS
+    // ==========================================================================
+
+    @Data
+    public static class StaffServiceReq {
+        @NotNull
+        private Long staffId;
+        @NotNull
+        private Long serviceId;
+        private Double priceOverride;
+    }
+
+    @GetMapping("/staff-services")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<List<StaffService>> getStaffServices(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+        return ResponseEntity.ok(staffServiceRepository.findByStaffBranchBusiness(business));
+    }
+
+    @PostMapping("/staff-services")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> assignStaffService(
+            @Valid @RequestBody StaffServiceReq request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Staff staff = staffRepository.findById(request.getStaffId())
+                .orElseThrow(() -> new RuntimeException("Staff member not found."));
+        Service service = serviceRepository.findById(request.getServiceId())
+                .orElseThrow(() -> new RuntimeException("Service not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+
+        if (!staff.getBranch().getBusiness().getId().equals(business.getId()) ||
+            !service.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        StaffService ss = StaffService.builder()
+                .staff(staff)
+                .service(service)
+                .priceOverride(request.getPriceOverride())
+                .build();
+
+        staffServiceRepository.save(ss);
+        return ResponseEntity.ok(new MessageResponse("Service assigned to staff successfully!"));
+    }
+
+    @PutMapping("/staff-services/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> updateStaffService(
+            @PathVariable Long id,
+            @Valid @RequestBody StaffServiceReq request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        StaffService ss = staffServiceRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Assignment record not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+
+        if (!ss.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        ss.setPriceOverride(request.getPriceOverride());
+        staffServiceRepository.save(ss);
+        return ResponseEntity.ok(new MessageResponse("Assignment rate updated successfully!"));
+    }
+
+    @DeleteMapping("/staff-services/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> unassignStaffService(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        StaffService ss = staffServiceRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Assignment record not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+
+        if (!ss.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        staffServiceRepository.delete(ss);
+        return ResponseEntity.ok(new MessageResponse("Staff service assignment removed."));
+    }
+
+    // ==========================================================================
+    // TIME OF DAY (PEAK) PRICING ENDPOINTS
+    // ==========================================================================
+
+    @Data
+    public static class TimePricingRequest {
+        @NotNull
+        private Long serviceId;
+        @NotNull
+        private Integer dayOfWeek;
+        @NotBlank
+        private String startTime; // "HH:mm"
+        @NotBlank
+        private String endTime;   // "HH:mm"
+        @NotNull
+        private Double priceMultiplier;
+    }
+
+    @GetMapping("/time-pricing")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<List<TimeOfDayPricing>> getTimePricingRules(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+        return ResponseEntity.ok(timeOfDayPricingRepository.findByServiceBusiness(business));
+    }
+
+    @PostMapping("/time-pricing")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> createTimePricing(
+            @Valid @RequestBody TimePricingRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Service service = serviceRepository.findById(request.getServiceId())
+                .orElseThrow(() -> new RuntimeException("Service not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+
+        if (!service.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        TimeOfDayPricing top = TimeOfDayPricing.builder()
+                .service(service)
+                .dayOfWeek(request.getDayOfWeek())
+                .startTime(java.time.LocalTime.parse(request.getStartTime()))
+                .endTime(java.time.LocalTime.parse(request.getEndTime()))
+                .priceMultiplier(request.getPriceMultiplier())
+                .build();
+
+        timeOfDayPricingRepository.save(top);
+        return ResponseEntity.ok(new MessageResponse("Peak pricing override saved!"));
+    }
+
+    @PutMapping("/time-pricing/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> updateTimePricing(
+            @PathVariable Long id,
+            @Valid @RequestBody TimePricingRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        TimeOfDayPricing top = timeOfDayPricingRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Pricing override rule not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+
+        if (!top.getService().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        top.setDayOfWeek(request.getDayOfWeek());
+        top.setStartTime(java.time.LocalTime.parse(request.getStartTime()));
+        top.setEndTime(java.time.LocalTime.parse(request.getEndTime()));
+        top.setPriceMultiplier(request.getPriceMultiplier());
+
+        timeOfDayPricingRepository.save(top);
+        return ResponseEntity.ok(new MessageResponse("Peak pricing override updated!"));
+    }
+
+    @DeleteMapping("/time-pricing/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> deleteTimePricing(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        TimeOfDayPricing top = timeOfDayPricingRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Pricing override rule not found."));
+
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = businessRepository.findByOwner(user)
+                .orElseThrow(() -> new RuntimeException("Business profile not found."));
+
+        if (!top.getService().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+        }
+
+        timeOfDayPricingRepository.delete(top);
+        return ResponseEntity.ok(new MessageResponse("Peak pricing rule deleted."));
     }
 }

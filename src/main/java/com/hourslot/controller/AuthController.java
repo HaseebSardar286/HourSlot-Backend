@@ -3,11 +3,19 @@ package com.hourslot.controller;
 import com.hourslot.dto.*;
 import com.hourslot.model.*;
 import com.hourslot.repository.BusinessRepository;
+import com.hourslot.repository.CategoryRepository;
 import com.hourslot.repository.CustomerRepository;
+import com.hourslot.repository.PasswordResetTokenRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.security.CustomUserDetails;
 import com.hourslot.security.JwtUtils;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -18,14 +26,19 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
 
     @Autowired
     private AuthenticationManager authenticationManager;
@@ -40,6 +53,12 @@ public class AuthController {
     private BusinessRepository businessRepository;
 
     @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+
+    @Autowired
     private PasswordEncoder encoder;
 
     @Autowired
@@ -47,6 +66,22 @@ public class AuthController {
 
     @Autowired
     private UserDetailsService userDetailsService;
+
+    @Data
+    public static class ForgotPasswordRequest {
+        @NotBlank
+        @Email
+        private String email;
+    }
+
+    @Data
+    public static class ResetPasswordRequest {
+        @NotBlank
+        private String token;
+        @NotBlank
+        @Size(min = 6)
+        private String newPassword;
+    }
 
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
@@ -73,8 +108,7 @@ public class AuthController {
                 userDetails.getRole().name(),
                 user.getFirstName(),
                 user.getLastName(),
-                roles
-        ));
+                roles));
     }
 
     @PostMapping("/register")
@@ -85,7 +119,7 @@ public class AuthController {
                     .body(new MessageResponse("Error: Email is already in use!"));
         }
 
-        // Determine User Role
+        // Only allow self-registration as CUSTOMER or BUSINESS_OWNER
         UserRole userRole = UserRole.CUSTOMER;
         if (signUpRequest.getRole() != null) {
             try {
@@ -94,6 +128,11 @@ public class AuthController {
                 return ResponseEntity
                         .badRequest()
                         .body(new MessageResponse("Error: Invalid role specified."));
+            }
+            if (userRole != UserRole.CUSTOMER && userRole != UserRole.BUSINESS_OWNER) {
+                return ResponseEntity
+                        .badRequest()
+                        .body(new MessageResponse("Error: Registration is limited to CUSTOMER or BUSINESS_OWNER roles."));
             }
         }
 
@@ -109,7 +148,8 @@ public class AuthController {
 
         User savedUser = userRepository.save(user);
 
-        // If registered user is a Customer, instantiate a Customer profile linked 1-to-1
+        // If registered user is a Customer, instantiate a Customer profile linked
+        // 1-to-1
         if (userRole == UserRole.CUSTOMER) {
             Customer customer = Customer.builder()
                     .user(savedUser)
@@ -117,18 +157,34 @@ public class AuthController {
             customerRepository.save(customer);
         }
 
-        // If registered user is a Business Owner, auto-create a Business stub in PENDING state
+        // If registered user is a Business Owner, auto-create a Business stub in
+        // PENDING state
         if (userRole == UserRole.BUSINESS_OWNER) {
             String businessName = signUpRequest.getBusinessName();
             if (businessName == null || businessName.isBlank()) {
                 businessName = savedUser.getFirstName() + "'s Business";
             }
 
+            Category primaryCategory = null;
+            if (signUpRequest.getBusinessCategory() != null && !signUpRequest.getBusinessCategory().isBlank()) {
+                String searchSlug = signUpRequest.getBusinessCategory().toLowerCase()
+                        .replaceAll("[^a-z0-9\\s-]", "")
+                        .replaceAll("\\s+", "-")
+                        .trim();
+                primaryCategory = categoryRepository.findBySlug(searchSlug).orElse(null);
+                if (primaryCategory == null) {
+                    primaryCategory = categoryRepository.findByActiveTrue().stream()
+                            .filter(c -> c.getName().equalsIgnoreCase(signUpRequest.getBusinessCategory()))
+                            .findFirst()
+                            .orElse(null);
+                }
+            }
+
             Business business = Business.builder()
                     .name(businessName)
                     .owner(savedUser)
                     .description(signUpRequest.getBusinessDescription())
-                    .category(signUpRequest.getBusinessCategory())
+                    .primaryCategory(primaryCategory)
                     .status(BusinessStatus.PENDING)
                     .build();
             businessRepository.save(business);
@@ -141,13 +197,13 @@ public class AuthController {
     public ResponseEntity<?> refreshToken(@Valid @RequestBody TokenRefreshRequest request) {
         String requestRefreshToken = request.getRefreshToken();
 
-        if (jwtUtils.validateJwtToken(requestRefreshToken)) {
+        if (jwtUtils.validateJwtToken(requestRefreshToken) && jwtUtils.isRefreshToken(requestRefreshToken)) {
             String username = jwtUtils.getUsernameFromJwtToken(requestRefreshToken);
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-            
+            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(userDetails,
+                    null, userDetails.getAuthorities());
+
             String token = jwtUtils.generateAccessToken(authentication);
             String newRefreshToken = jwtUtils.generateRefreshToken(authentication);
 
@@ -155,5 +211,53 @@ public class AuthController {
         }
 
         return ResponseEntity.badRequest().body(new MessageResponse("Refresh token is expired or invalid!"));
+    }
+
+    @PostMapping("/forgot-password")
+    @Transactional
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        // Always return success to avoid email enumeration
+        final String[] generated = { null };
+        userRepository.findByEmail(request.getEmail()).ifPresent(user -> {
+            passwordResetTokenRepository.deleteByUser(user);
+            String token = UUID.randomUUID().toString();
+            PasswordResetToken resetToken = PasswordResetToken.builder()
+                    .token(token)
+                    .user(user)
+                    .expiresAt(LocalDateTime.now().plusHours(1))
+                    .used(false)
+                    .build();
+            passwordResetTokenRepository.save(resetToken);
+            generated[0] = token;
+            logger.info("Password reset token for {}: {}", user.getEmail(), token);
+            logger.info("Reset URL: /auth/reset-password?token={}", token);
+        });
+
+        String profiles = System.getenv().getOrDefault("SPRING_PROFILES_ACTIVE", "dev");
+        if (!profiles.contains("prod") && generated[0] != null) {
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("message", "If an account exists for that email, a password reset link has been generated.");
+            body.put("token", generated[0]);
+            return ResponseEntity.ok(body);
+        }
+        return ResponseEntity.ok(new MessageResponse(
+                "If an account exists for that email, a password reset link has been generated."));
+    }
+
+    @PostMapping("/reset-password")
+    @Transactional
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(request.getToken())
+                .orElse(null);
+        if (resetToken == null || resetToken.isUsed() || resetToken.isExpired()) {
+            return ResponseEntity.badRequest()
+                    .body(new MessageResponse("Reset token is invalid or expired."));
+        }
+        User user = resetToken.getUser();
+        user.setPassword(encoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        resetToken.setUsed(true);
+        passwordResetTokenRepository.save(resetToken);
+        return ResponseEntity.ok(new MessageResponse("Password has been reset successfully."));
     }
 }

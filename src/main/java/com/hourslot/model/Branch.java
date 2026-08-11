@@ -6,6 +6,8 @@ import lombok.*;
 import org.locationtech.jts.geom.Point;
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 @Entity
 @Table(name = "branches", indexes = {
     @Index(name = "idx_branches_geom", columnList = "geom")
@@ -14,6 +16,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Branch {
 
     @Id

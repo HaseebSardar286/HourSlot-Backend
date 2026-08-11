@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 @Entity
 @Table(name = "bookings", indexes = {
     @Index(name = "idx_bookings_time", columnList = "booking_time"),
@@ -14,6 +16,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Booking {
 
     @Id
@@ -54,6 +57,12 @@ public class Booking {
 
     @Column(name = "payment_status")
     private String paymentStatus;
+
+    @Column(name = "client_notes", columnDefinition = "TEXT")
+    private String clientNotes;
+
+    @Version
+    private Long version;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
