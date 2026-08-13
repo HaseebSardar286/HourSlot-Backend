@@ -116,6 +116,7 @@ public class AuthController {
     }
 
     @PostMapping("/register")
+    @Transactional
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest signUpRequest) {
         if (userRepository.existsByEmail(signUpRequest.getEmail())) {
             return ResponseEntity

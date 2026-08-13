@@ -13,14 +13,32 @@ import java.util.List;
 public interface BranchRepository extends JpaRepository<Branch, Long> {
     List<Branch> findByBusiness(Business business);
 
+    @Query("""
+            SELECT DISTINCT b FROM Branch b
+            JOIN FETCH b.business biz
+            LEFT JOIN FETCH biz.primaryCategory
+            WHERE b.id IN :ids
+            """)
+    List<Branch> findAllWithBusinessByIdIn(@Param("ids") List<Long> ids);
+
+    @Query("""
+            SELECT DISTINCT b FROM Branch b
+            JOIN FETCH b.business biz
+            LEFT JOIN FETCH biz.primaryCategory
+            """)
+    List<Branch> findAllWithBusiness();
+
     /**
      * Nearby search using Haversine distance on plain latitude/longitude columns.
-     * Radius is in meters. No PostGIS / geometry types required.
+     * Returns branch ids ordered by distance. Radius is in meters.
      */
     @Query(value = """
-            SELECT * FROM branches b
+            SELECT b.id FROM branches b
+            INNER JOIN businesses biz ON biz.id = b.business_id
             WHERE b.latitude IS NOT NULL
               AND b.longitude IS NOT NULL
+              AND biz.status = 'APPROVED'
+              AND biz.is_verified = true
               AND (
                 6371000 * acos(
                   LEAST(1.0, GREATEST(-1.0,
@@ -40,7 +58,7 @@ public interface BranchRepository extends JpaRepository<Branch, Long> {
               )
             )
             """, nativeQuery = true)
-    List<Branch> findNearbyBranches(
+    List<Long> findNearbyBranchIds(
             @Param("lat") double lat,
             @Param("lon") double lon,
             @Param("radius") double radius
