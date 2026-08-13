@@ -70,12 +70,14 @@ public class SecurityConfig {
             .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/error").permitAll()
+                .requestMatchers("/api/auth/**", "/api/payments/webhook", "/error").permitAll()
                 .requestMatchers("/api/business/profile-by-slug/**").permitAll()
                 .requestMatchers("/api/public/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/discover/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/reviews/business/**").permitAll()
                 .requestMatchers("/uploads/**").permitAll()
+                // External tools sometimes probe this path on localhost:8080 — not an HourSlot API
+                .requestMatchers("/audit/**").permitAll()
                 .requestMatchers("/api/customer/**").hasRole("CUSTOMER")
                 .requestMatchers("/api/business/**").hasAnyRole("BUSINESS_OWNER", "BUSINESS_STAFF")
                 .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")

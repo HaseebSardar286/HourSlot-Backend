@@ -1,16 +1,16 @@
 package com.hourslot.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
-import org.locationtech.jts.geom.Point;
-import java.time.LocalDateTime;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "branches", indexes = {
-    @Index(name = "idx_branches_geom", columnList = "geom")
+        @Index(name = "idx_branches_lat_lon", columnList = "latitude, longitude")
 })
 @Data
 @NoArgsConstructor
@@ -25,6 +25,10 @@ public class Branch {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "business_id", nullable = false)
+    @JsonIgnoreProperties({
+            "owner", "secondaryCategories", "primaryCategory",
+            "hibernateLazyInitializer", "handler"
+    })
     private Business business;
 
     @NotBlank
@@ -35,9 +39,15 @@ public class Branch {
     @Column(nullable = false)
     private String address;
 
-    // PostGIS point geometry with standard 4326 spatial reference system (WGS84 lat/lon)
-    @Column(columnDefinition = "geometry(Point, 4326)")
-    private Point geom;
+    /** WGS84 latitude — plain column, fully app-controlled (no PostGIS). */
+    @NotNull
+    @Column(nullable = false)
+    private Double latitude;
+
+    /** WGS84 longitude — plain column, fully app-controlled (no PostGIS). */
+    @NotNull
+    @Column(nullable = false)
+    private Double longitude;
 
     @Column(name = "phone_number")
     private String phoneNumber;

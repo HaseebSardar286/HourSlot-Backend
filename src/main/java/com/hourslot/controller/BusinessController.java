@@ -4,10 +4,6 @@ import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.*;
 import com.hourslot.repository.*;
 import com.hourslot.security.CustomUserDetails;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
-import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -49,8 +45,6 @@ public class BusinessController {
 
     @Autowired
     private TimeOfDayPricingRepository timeOfDayPricingRepository;
-
-    private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
     @Data
     public static class BusinessRegistrationRequest {
@@ -146,14 +140,17 @@ public class BusinessController {
         // Allow setup while PENDING so owners can complete onboarding before admin approval.
         // Bookings remain blocked until APPROVED + verified.
 
-        // Generate JTS coordinates Point geometry
-        Point geom = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
+        if (request.getLatitude() == null || request.getLongitude() == null) {
+            return ResponseEntity.badRequest()
+                    .body(new MessageResponse("Latitude and longitude are required."));
+        }
 
         Branch branch = Branch.builder()
                 .business(business)
                 .name(request.getName())
                 .address(request.getAddress())
-                .geom(geom)
+                .latitude(request.getLatitude())
+                .longitude(request.getLongitude())
                 .phoneNumber(request.getPhoneNumber())
                 .build();
 
@@ -496,11 +493,15 @@ public class BusinessController {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
-        Point geom = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
+        if (request.getLatitude() == null || request.getLongitude() == null) {
+            return ResponseEntity.badRequest()
+                    .body(new MessageResponse("Latitude and longitude are required."));
+        }
 
         branch.setName(request.getName());
         branch.setAddress(request.getAddress());
-        branch.setGeom(geom);
+        branch.setLatitude(request.getLatitude());
+        branch.setLongitude(request.getLongitude());
         branch.setPhoneNumber(request.getPhoneNumber());
 
         branchRepository.save(branch);

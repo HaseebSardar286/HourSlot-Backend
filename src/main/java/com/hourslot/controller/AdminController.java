@@ -12,10 +12,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
-import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -66,8 +62,6 @@ public class AdminController {
 
     @Autowired
     private CategoryRepository categoryRepository;
-
-    private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
     @PostConstruct
     public void initDefaultConfig() {
@@ -625,13 +619,13 @@ public class AdminController {
         businessRepository.save(business2);
 
         // 3. Seed Branches
-        Point branchGeom = geometryFactory.createPoint(new Coordinate(-122.4194, 37.7749));
         Branch branch1 = Branch.builder()
                 .business(business1)
                 .name("Zenith Salon Downtown")
                 .address("123 Main St, San Francisco, CA")
                 .phoneNumber("+15553030")
-                .geom(branchGeom)
+                .latitude(37.7749)
+                .longitude(-122.4194)
                 .build();
         branchRepository.save(branch1);
 
@@ -640,7 +634,8 @@ public class AdminController {
                 .name("Elite Dental Bay Area")
                 .address("456 Medical Blvd, San Francisco, CA")
                 .phoneNumber("+15554040")
-                .geom(branchGeom)
+                .latitude(37.7849)
+                .longitude(-122.4094)
                 .build();
         branchRepository.save(branch2);
 

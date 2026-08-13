@@ -58,6 +58,10 @@ public class Booking {
     @Column(name = "payment_status")
     private String paymentStatus;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "customer_package_id")
+    private CustomerPackage customerPackage;
+
     @Column(name = "client_notes", columnDefinition = "TEXT")
     private String clientNotes;
 

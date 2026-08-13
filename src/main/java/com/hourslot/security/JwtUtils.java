@@ -3,21 +3,22 @@ package com.hourslot.security;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
 public class JwtUtils {
-    private static final Logger logger = LoggerFactory.getLogger(JwtUtils.class);
+    private static final Logger log = LogManager.getLogger(JwtUtils.class);
 
     @Value("${app.security.jwt.secret}")
     private String jwtSecret;
@@ -34,7 +35,10 @@ public class JwtUtils {
     }
 
     public String generateAccessToken(Authentication authentication) {
-        CustomUserDetails userPrincipal = (CustomUserDetails) authentication.getPrincipal();
+        Object principal = authentication.getPrincipal();
+        if (!(principal instanceof CustomUserDetails userPrincipal)) {
+            throw new IllegalStateException("Unexpected authentication principal type");
+        }
         List<String> roles = userPrincipal.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
@@ -51,7 +55,10 @@ public class JwtUtils {
     }
 
     public String generateRefreshToken(Authentication authentication) {
-        CustomUserDetails userPrincipal = (CustomUserDetails) authentication.getPrincipal();
+        Object principal = authentication.getPrincipal();
+        if (!(principal instanceof CustomUserDetails userPrincipal)) {
+            throw new IllegalStateException("Unexpected authentication principal type");
+        }
         return Jwts.builder()
                 .subject(userPrincipal.getUsername())
                 .claim("userId", userPrincipal.getId())
@@ -106,7 +113,16 @@ public class JwtUtils {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-        return claims.get("roles", List.class);
+        Object rolesClaim = claims.get("roles");
+        List<String> roles = new ArrayList<>();
+        if (rolesClaim instanceof List<?> raw) {
+            for (Object item : raw) {
+                if (item != null) {
+                    roles.add(item.toString());
+                }
+            }
+        }
+        return roles;
     }
 
     public boolean validateJwtToken(String authToken) {
@@ -114,7 +130,7 @@ public class JwtUtils {
             Jwts.parser().verifyWith(getSignKey()).build().parseSignedClaims(authToken);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
-            logger.error("Invalid JWT token: {}", e.getMessage());
+            log.warn("Invalid JWT token: {}", e.getMessage());
         }
         return false;
     }

@@ -26,6 +26,7 @@ public class Business {
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id", nullable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties({"password", "hibernateLazyInitializer", "handler"})
     private User owner;
 
     @Column(columnDefinition = "TEXT")

@@ -1,5 +1,7 @@
 package com.hourslot.service;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -11,6 +13,7 @@ import java.time.format.DateTimeFormatter;
 @Service
 public class SlotLockService {
 
+    private static final Logger log = LogManager.getLogger(SlotLockService.class);
     private static final Duration LOCK_TTL = Duration.ofMinutes(5);
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 
@@ -24,13 +27,18 @@ public class SlotLockService {
 
     public boolean tryAcquire(String lockKey) {
         if (redisTemplate == null) {
+            log.debug("Redis unavailable — skipping lock acquire for key={}", lockKey);
             return true;
         }
         try {
             Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", LOCK_TTL);
-            return Boolean.TRUE.equals(acquired);
+            boolean ok = Boolean.TRUE.equals(acquired);
+            if (!ok) {
+                log.info("Slot lock already held: {}", lockKey);
+            }
+            return ok;
         } catch (Exception e) {
-            // If Redis is down, allow booking rather than blocking the marketplace
+            log.warn("Redis lock acquire failed for key={} — allowing booking. Cause: {}", lockKey, e.getMessage());
             return true;
         }
     }
@@ -42,6 +50,7 @@ public class SlotLockService {
         try {
             return Boolean.TRUE.equals(redisTemplate.hasKey(lockKey));
         } catch (Exception e) {
+            log.warn("Redis lock check failed for key={}: {}", lockKey, e.getMessage());
             return false;
         }
     }
@@ -52,8 +61,9 @@ public class SlotLockService {
         }
         try {
             redisTemplate.delete(lockKey);
-        } catch (Exception ignored) {
-            // no-op
+            log.debug("Released slot lock key={}", lockKey);
+        } catch (Exception e) {
+            log.warn("Redis lock release failed for key={}: {}", lockKey, e.getMessage());
         }
     }
 }

@@ -3,7 +3,10 @@ package com.hourslot.repository;
 import com.hourslot.model.Business;
 import com.hourslot.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -14,4 +17,7 @@ public interface BusinessRepository extends JpaRepository<Business, Long> {
     Optional<Business> findBySlug(String slug);
     boolean existsBySlug(String slug);
     List<Business> findByVerified(boolean verified);
+
+    @Query("SELECT b.owner FROM Business b WHERE b.id = :businessId")
+    Optional<User> findOwnerByBusinessId(@Param("businessId") Long businessId);
 }

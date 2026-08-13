@@ -1,42 +1,39 @@
 package com.hourslot.model;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 import java.time.LocalDateTime;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
-@Table(name = "staff")
+@Table(name = "customer_packages")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-public class Staff {
+public class CustomerPackage {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "branch_id", nullable = false)
-    private Branch branch;
+    @JoinColumn(name = "customer_id", nullable = false)
+    private Customer customer;
 
-    // Optional link to a User account for scheduling control / login
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
-    @JsonIgnoreProperties({"password", "hibernateLazyInitializer", "handler"})
-    private User user;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "package_id", nullable = false)
+    private ServicePackage servicePackage;
 
-    @NotBlank
+    @Column(name = "sessions_remaining", nullable = false)
+    private int sessionsRemaining;
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
     @Column(nullable = false)
-    private String name;
-
-    private String designation;
-
-    private double rating;
+    private String status; // ACTIVE, EXPIRED, EXHAUSTED
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

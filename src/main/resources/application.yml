@@ -14,14 +14,13 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   jpa:
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: ${JPA_DDL_AUTO:update}
+    open-in-view: false
     show-sql: false
     properties:
       hibernate:
         format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
 
   flyway:
     enabled: ${FLYWAY_ENABLED:false}
@@ -39,7 +38,11 @@ spring:
       password: ${REDIS_PASSWORD:}
       timeout: 60000
 
+  # Set MAIL_HOST / MAIL_PORT / MAIL_USERNAME / MAIL_PASSWORD to enable SMTP.
+  # Spring Boot auto-configures JavaMailSender when spring.mail.host is present.
+
 app:
+  frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
   security:
     jwt:
       secret: ${JWT_SECRET:}
@@ -60,13 +63,15 @@ app:
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
     commission-percentage: 10.0
 
+logging:
+  config: classpath:log4j2-spring.xml
+
 ---
 spring:
   config:
     activate:
       on-profile: dev
   datasource:
-    # Defaults to your Neon DB (same as before). Override with DATABASE_* env vars if needed.
     url: ${DATABASE_URL:jdbc:postgresql://ep-rough-lab-ay5c9073.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require}
     username: ${DATABASE_USER:neondb_owner}
     password: ${DATABASE_PASSWORD:npg_TKPjdIqb34rC}
@@ -77,7 +82,6 @@ spring:
     enabled: false
   data:
     redis:
-      # Slot locks degrade gracefully if Redis is down (see SlotLockService)
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 

@@ -7,6 +7,7 @@ import com.hourslot.repository.CategoryRepository;
 import com.hourslot.repository.CustomerRepository;
 import com.hourslot.repository.PasswordResetTokenRepository;
 import com.hourslot.repository.UserRepository;
+import com.hourslot.service.MailService;
 import com.hourslot.security.CustomUserDetails;
 import com.hourslot.security.JwtUtils;
 import jakarta.validation.Valid;
@@ -14,8 +15,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -38,7 +39,7 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+    private static final Logger log = LogManager.getLogger(AuthController.class);
 
     @Autowired
     private AuthenticationManager authenticationManager;
@@ -66,6 +67,9 @@ public class AuthController {
 
     @Autowired
     private UserDetailsService userDetailsService;
+
+    @Autowired
+    private MailService mailService;
 
     @Data
     public static class ForgotPasswordRequest {
@@ -229,8 +233,9 @@ public class AuthController {
                     .build();
             passwordResetTokenRepository.save(resetToken);
             generated[0] = token;
-            logger.info("Password reset token for {}: {}", user.getEmail(), token);
-            logger.info("Reset URL: /auth/reset-password?token={}", token);
+            log.info("Password reset token for {}: {}", user.getEmail(), token);
+            log.info("Reset URL: /auth/reset-password?token={}", token);
+            mailService.sendPasswordResetEmail(user.getEmail(), token);
         });
 
         String profiles = System.getenv().getOrDefault("SPRING_PROFILES_ACTIVE", "dev");

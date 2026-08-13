@@ -34,6 +34,9 @@ public class DiscoveryController {
     @Autowired
     private ReviewRepository reviewRepository;
 
+    @Autowired
+    private ServicePackageRepository servicePackageRepository;
+
     @Data
     public static class PublicBusinessProfile {
         private Business business;
@@ -41,6 +44,7 @@ public class DiscoveryController {
         private List<Service> services;
         private List<Staff> staff;
         private List<Review> reviews;
+        private List<ServicePackage> packages;
         private double averageRating;
     }
 
@@ -133,6 +137,7 @@ public class DiscoveryController {
         profile.setServices(services);
         profile.setStaff(staff);
         profile.setReviews(reviews);
+        profile.setPackages(servicePackageRepository.findByBusinessAndActiveTrue(business));
         profile.setAverageRating(avgRating);
 
         return ResponseEntity.ok(profile);

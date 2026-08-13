@@ -6,6 +6,7 @@ import com.hourslot.repository.*;
 import com.hourslot.security.CustomUserDetails;
 import com.hourslot.service.BookingService;
 import com.hourslot.service.BookingStatusRules;
+import com.hourslot.service.MailService;
 import com.hourslot.service.NotificationService;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,7 +50,13 @@ public class BookingController {
     private NotificationService notificationService;
 
     @Autowired
+    private CustomerPackageRepository customerPackageRepository;
+
+    @Autowired
     private BookingStatusRules bookingStatusRules;
+
+    @Autowired
+    private MailService mailService;
 
     @Data
     public static class BookingRequest {
@@ -62,6 +69,7 @@ public class BookingController {
         private String bookingTime; // "yyyy-MM-dd'T'HH:mm:ss" or "yyyy-MM-dd HH:mm:ss"
         private Long customerId; // Optional: for Business Owner to book on behalf of client
         private String clientNotes;
+        private Long customerPackageId;
     }
 
     @Data
@@ -92,29 +100,43 @@ public class BookingController {
 
         try {
             LocalDateTime bookingTime = LocalDateTime.parse(request.getBookingTime(), DateTimeFormatter.ISO_DATE_TIME);
-            Booking booking = bookingService.createBooking(
+            Booking created = bookingService.createBooking(
                     customerIdToUse,
                     request.getBranchId(),
                     request.getServiceId(),
                     request.getStaffId(),
                     bookingTime,
-                    request.getClientNotes()
+                    request.getClientNotes(),
+                    request.getCustomerPackageId()
             );
+
+            Booking booking = bookingRepository.findByIdWithDetails(created.getId()).orElse(created);
+
             User customerUser = userRepository.findById(customerIdToUse).orElse(null);
             notificationService.notify(
                     customerUser,
                     "Booking confirmed",
                     "Your appointment is confirmed for " + booking.getBookingTime() + "."
             );
-            Branch bookedBranch = branchRepository.findById(request.getBranchId()).orElse(null);
-            if (bookedBranch != null && bookedBranch.getBusiness() != null
-                    && bookedBranch.getBusiness().getOwner() != null) {
-                notificationService.notify(
-                        bookedBranch.getBusiness().getOwner(),
-                        "New booking",
-                        "A new booking was created for " + bookingTime + "."
+            if (customerUser != null && booking.getService() != null && booking.getBranch() != null) {
+                mailService.sendBookingCreatedEmail(
+                        customerUser.getEmail(),
+                        customerUser.getFirstName(),
+                        booking.getService().getName(),
+                        booking.getBookingTime().toString(),
+                        booking.getBranch().getName()
                 );
             }
+
+            if (booking.getBranch() != null && booking.getBranch().getBusiness() != null) {
+                businessRepository.findOwnerByBusinessId(booking.getBranch().getBusiness().getId())
+                        .ifPresent(owner -> notificationService.notify(
+                                owner,
+                                "New booking",
+                                "A new booking was created for " + bookingTime + "."
+                        ));
+            }
+
             return ResponseEntity.ok(booking);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(new MessageResponse("Booking failed: " + e.getMessage()));
@@ -145,7 +167,7 @@ public class BookingController {
             }
         }
 
-        List<Booking> bookings = bookingRepository.findByBranchOrderByBookingTimeDesc(branch);
+        List<Booking> bookings = bookingRepository.findByBranchWithDetails(branch);
         return ResponseEntity.ok(bookings);
     }
 
@@ -155,7 +177,7 @@ public class BookingController {
             @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-        Booking booking = bookingRepository.findById(id)
+        Booking booking = bookingRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> new RuntimeException("Booking not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
@@ -237,15 +259,35 @@ public class BookingController {
                     "Error: Invalid status transition from " + booking.getStatus() + " to " + newStatus));
         }
 
+        if (newStatus == BookingStatus.CANCELLED && booking.getStatus() != BookingStatus.CANCELLED) {
+            if (booking.getCustomerPackage() != null) {
+                CustomerPackage cp = booking.getCustomerPackage();
+                cp.setSessionsRemaining(cp.getSessionsRemaining() + 1);
+                if (cp.getStatus().equals("EXHAUSTED") || cp.getStatus().equals("EXPIRED")) {
+                    cp.setStatus("ACTIVE");
+                }
+                customerPackageRepository.save(cp);
+            }
+        }
         booking.setStatus(newStatus);
         bookingRepository.save(booking);
+        User customerUser = booking.getCustomer() != null
+                ? userRepository.findById(booking.getCustomer().getId()).orElse(null)
+                : null;
         notificationService.notify(
-                booking.getCustomer() != null
-                        ? userRepository.findById(booking.getCustomer().getId()).orElse(null)
-                        : null,
+                customerUser,
                 "Booking updated",
                 "Your booking status is now " + newStatus + "."
         );
+        if (customerUser != null) {
+            mailService.sendBookingStatusEmail(
+                    customerUser.getEmail(),
+                    customerUser.getFirstName(),
+                    booking.getService().getName(),
+                    booking.getBookingTime().toString(),
+                    newStatus.name()
+            );
+        }
 
         return ResponseEntity.ok(new MessageResponse("Booking status updated to " + newStatus));
     }
@@ -256,7 +298,7 @@ public class BookingController {
         Customer customer = customerRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
 
-        List<Booking> bookings = bookingRepository.findByCustomerOrderByBookingTimeDesc(customer);
+        List<Booking> bookings = bookingRepository.findByCustomerWithDetails(customer);
         return ResponseEntity.ok(bookings);
     }
 
@@ -273,10 +315,52 @@ public class BookingController {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized booking cancellation."));
         }
 
-        booking.setStatus(BookingStatus.CANCELLED);
-        bookingRepository.save(booking);
+        if (booking.getStatus() != BookingStatus.CANCELLED) {
+            if (booking.getCustomerPackage() != null) {
+                CustomerPackage cp = booking.getCustomerPackage();
+                cp.setSessionsRemaining(cp.getSessionsRemaining() + 1);
+                if (cp.getStatus().equals("EXHAUSTED") || cp.getStatus().equals("EXPIRED")) {
+                    cp.setStatus("ACTIVE");
+                }
+                customerPackageRepository.save(cp);
+            }
+            booking.setStatus(BookingStatus.CANCELLED);
+            bookingRepository.save(booking);
+        }
 
         return ResponseEntity.ok(new MessageResponse("Booking cancelled successfully."));
+    }
+
+    @PutMapping("/bookings/{id}/reschedule")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> rescheduleBooking(
+            @PathVariable Long id,
+            @RequestParam String bookingTime,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+
+        try {
+            LocalDateTime newTime = LocalDateTime.parse(bookingTime, DateTimeFormatter.ISO_DATE_TIME);
+            Booking updated = bookingService.rescheduleBooking(
+                    id,
+                    newTime,
+                    userDetails.getRole(),
+                    userDetails.getId()
+            );
+
+            Booking booking = bookingRepository.findByIdWithDetails(updated.getId()).orElse(updated);
+
+            Long customerId = booking.getCustomer() != null ? booking.getCustomer().getId() : null;
+            String serviceName = booking.getService() != null ? booking.getService().getName() : "your appointment";
+            notificationService.notify(
+                    customerId != null ? userRepository.findById(customerId).orElse(null) : null,
+                    "Appointment Rescheduled",
+                    "Your appointment for " + serviceName + " has been rescheduled to " + newTime + "."
+            );
+
+            return ResponseEntity.ok(booking);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(new MessageResponse("Rescheduling failed: " + e.getMessage()));
+        }
     }
 
 }
