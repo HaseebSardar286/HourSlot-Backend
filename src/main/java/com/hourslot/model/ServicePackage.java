@@ -38,6 +38,10 @@ public class ServicePackage {
     @Column(nullable = false)
     private double price;
 
+    @Column(nullable = false, length = 3)
+    @Builder.Default
+    private String currency = "USD";
+
     @NotNull
     @Min(1)
     @Column(name = "sessions_count", nullable = false)
@@ -60,6 +64,12 @@ public class ServicePackage {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @PrePersist
     protected void onCreate() {

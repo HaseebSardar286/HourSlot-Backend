@@ -2,13 +2,13 @@ package com.hourslot.service;
 
 import com.hourslot.model.Booking;
 import com.hourslot.model.BookingStatus;
-import com.hourslot.model.Customer;
 import com.hourslot.model.CustomerPackage;
+import com.hourslot.model.Payment;
 import com.hourslot.model.ServicePackage;
 import com.hourslot.model.User;
 import com.hourslot.repository.BookingRepository;
 import com.hourslot.repository.CustomerPackageRepository;
-import com.hourslot.repository.CustomerRepository;
+import com.hourslot.repository.PaymentRepository;
 import com.hourslot.repository.ServicePackageRepository;
 import com.hourslot.repository.UserRepository;
 import com.stripe.Stripe;
@@ -43,7 +43,7 @@ public class PaymentService {
     private final BookingRepository bookingRepository;
     private final CustomerPackageRepository customerPackageRepository;
     private final ServicePackageRepository servicePackageRepository;
-    private final CustomerRepository customerRepository;
+    private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final MailService mailService;
     private final NotificationService notificationService;
@@ -61,14 +61,14 @@ public class PaymentService {
             BookingRepository bookingRepository,
             CustomerPackageRepository customerPackageRepository,
             ServicePackageRepository servicePackageRepository,
-            CustomerRepository customerRepository,
+            PaymentRepository paymentRepository,
             UserRepository userRepository,
             MailService mailService,
             NotificationService notificationService) {
         this.bookingRepository = bookingRepository;
         this.customerPackageRepository = customerPackageRepository;
         this.servicePackageRepository = servicePackageRepository;
-        this.customerRepository = customerRepository;
+        this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.mailService = mailService;
         this.notificationService = notificationService;
@@ -93,7 +93,7 @@ public class PaymentService {
     }
 
     public Map<String, String> createBookingCheckout(Long bookingId) throws StripeException {
-        Booking booking = bookingRepository.findById(bookingId)
+        Booking booking = bookingRepository.findByIdWithDetails(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
 
         if (booking.getService() == null || booking.getBranch() == null) {
@@ -248,12 +248,26 @@ public class PaymentService {
     }
 
     private void markBookingPaid(Long bookingId) {
-        Booking booking = bookingRepository.findById(bookingId)
+        Booking booking = bookingRepository.findByIdWithDetails(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
 
         booking.setPaymentStatus("PAID");
         booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setPaymentMethod("ONLINE");
         bookingRepository.save(booking);
+
+        paymentRepository.save(Payment.builder()
+                .organization(booking.getOrganization() != null ? booking.getOrganization() : booking.getBranch().getBusiness().getOrganization())
+                .business(booking.getBusiness() != null ? booking.getBusiness() : booking.getBranch().getBusiness())
+                .user(booking.getCustomerUser())
+                .purpose("BOOKING")
+                .referenceType("BOOKING")
+                .referenceId(booking.getId())
+                .provider("STRIPE")
+                .amount(java.math.BigDecimal.valueOf(booking.getPrice()))
+                .currency(booking.getCurrency() == null ? "USD" : booking.getCurrency())
+                .status("SUCCEEDED")
+                .build());
         log.info("Booking {} marked PAID via Stripe webhook", bookingId);
 
         if (booking.getCustomer() == null) {
@@ -277,7 +291,7 @@ public class PaymentService {
     }
 
     private void activatePurchasedPackage(Long packageId, Long customerId) {
-        Customer customer = customerRepository.findById(customerId)
+        User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new IllegalArgumentException("Customer not found: " + customerId));
         ServicePackage servicePackage = servicePackageRepository.findById(packageId)
                 .orElseThrow(() -> new IllegalArgumentException("Package not found: " + packageId));
@@ -288,13 +302,27 @@ public class PaymentService {
         }
 
         CustomerPackage customerPackage = CustomerPackage.builder()
-                .customer(customer)
+                .customerUser(customer)
                 .servicePackage(servicePackage)
+                .business(servicePackage.getBusiness())
                 .sessionsRemaining(servicePackage.getSessionsCount())
                 .expiresAt(expiresAt)
                 .status("ACTIVE")
                 .build();
-        customerPackageRepository.save(customerPackage);
+        customerPackage = customerPackageRepository.save(customerPackage);
+
+        paymentRepository.save(Payment.builder()
+                .business(servicePackage.getBusiness())
+                .organization(servicePackage.getBusiness().getOrganization())
+                .user(customer)
+                .purpose("PACKAGE")
+                .referenceType("CUSTOMER_PACKAGE")
+                .referenceId(customerPackage.getId())
+                .provider("STRIPE")
+                .amount(java.math.BigDecimal.valueOf(servicePackage.getPrice()))
+                .currency(servicePackage.getCurrency() == null ? "USD" : servicePackage.getCurrency())
+                .status("SUCCEEDED")
+                .build());
         log.info("Activated package {} for customer {} via Stripe webhook", packageId, customerId);
 
         userRepository.findById(customerId).ifPresent(user -> {

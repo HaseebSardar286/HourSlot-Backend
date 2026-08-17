@@ -8,6 +8,7 @@ import com.hourslot.service.BookingService;
 import com.hourslot.service.BookingStatusRules;
 import com.hourslot.service.MailService;
 import com.hourslot.service.NotificationService;
+import com.hourslot.service.TenancyService;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -32,7 +33,7 @@ public class BookingController {
     private BookingRepository bookingRepository;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private TenancyService tenancyService;
 
     @Autowired
     private UserRepository userRepository;
@@ -87,7 +88,7 @@ public class BookingController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Long customerIdToUse = null;
 
-        if (user.getRole() == UserRole.CUSTOMER) {
+        if (userDetails.getRole() == UserRole.CUSTOMER) {
             // Customer booking themselves
             customerIdToUse = user.getId();
         } else {
@@ -129,7 +130,7 @@ public class BookingController {
             }
 
             if (booking.getBranch() != null && booking.getBranch().getBusiness() != null) {
-                businessRepository.findOwnerByBusinessId(booking.getBranch().getBusiness().getId())
+                tenancyService.findOwner(booking.getBranch().getBusiness())
                         .ifPresent(owner -> notificationService.notify(
                                 owner,
                                 "New booking",
@@ -153,13 +154,13 @@ public class BookingController {
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        if (user.getRole() == UserRole.BUSINESS_OWNER) {
-            Business business = businessRepository.findByOwner(user)
+        if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
+            Business business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found."));
             if (!branch.getBusiness().getId().equals(business.getId())) {
                 return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
             }
-        } else if (user.getRole() == UserRole.BUSINESS_STAFF) {
+        } else if (userDetails.getRole() == UserRole.BUSINESS_STAFF) {
             Staff staff = staffRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Staff account not found."));
             if (!staff.getBranch().getId().equals(branchId)) {
@@ -184,17 +185,17 @@ public class BookingController {
 
         // Check Authorization
         boolean isAuthorized = false;
-        if (user.getRole() == UserRole.SUPER_ADMIN) {
+        if (userDetails.getRole() == UserRole.SUPER_ADMIN) {
             isAuthorized = true;
-        } else if (user.getRole() == UserRole.CUSTOMER && booking.getCustomer().getId().equals(user.getId())) {
+        } else if (userDetails.getRole() == UserRole.CUSTOMER && booking.getCustomer().getId().equals(user.getId())) {
             isAuthorized = true;
-        } else if (user.getRole() == UserRole.BUSINESS_OWNER) {
-            Business business = businessRepository.findByOwner(user)
+        } else if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
+            Business business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found."));
             if (booking.getBranch().getBusiness().getId().equals(business.getId())) {
                 isAuthorized = true;
             }
-        } else if (user.getRole() == UserRole.BUSINESS_STAFF) {
+        } else if (userDetails.getRole() == UserRole.BUSINESS_STAFF) {
             Staff staff = staffRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Staff account not found."));
             if (booking.getBranch().getId().equals(staff.getBranch().getId())) {
@@ -216,7 +217,7 @@ public class BookingController {
             @Valid @RequestBody StatusUpdate request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-        Booking booking = bookingRepository.findById(id)
+        Booking booking = bookingRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> new RuntimeException("Booking not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
@@ -229,19 +230,19 @@ public class BookingController {
 
         // Check Authorization
         boolean isAuthorized = false;
-        if (user.getRole() == UserRole.BUSINESS_OWNER) {
-            Business business = businessRepository.findByOwner(user)
+        if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
+            Business business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found."));
             if (booking.getBranch().getBusiness().getId().equals(business.getId())) {
                 isAuthorized = true;
             }
-        } else if (user.getRole() == UserRole.BUSINESS_STAFF) {
+        } else if (userDetails.getRole() == UserRole.BUSINESS_STAFF) {
             Staff staff = staffRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Staff account not found."));
             if (booking.getBranch().getId().equals(staff.getBranch().getId())) {
                 isAuthorized = true;
             }
-        } else if (user.getRole() == UserRole.CUSTOMER && booking.getCustomer().getId().equals(user.getId())) {
+        } else if (userDetails.getRole() == UserRole.CUSTOMER && booking.getCustomer().getId().equals(user.getId())) {
             // Customer can ONLY transition to CANCELLED
             if (newStatus == BookingStatus.CANCELLED) {
                 isAuthorized = true;
@@ -254,7 +255,7 @@ public class BookingController {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized status modification."));
         }
 
-        if (!bookingStatusRules.isValidTransition(booking.getStatus(), newStatus, user.getRole())) {
+        if (!bookingStatusRules.isValidTransition(booking.getStatus(), newStatus, userDetails.getRole())) {
             return ResponseEntity.badRequest().body(new MessageResponse(
                     "Error: Invalid status transition from " + booking.getStatus() + " to " + newStatus));
         }
@@ -295,10 +296,9 @@ public class BookingController {
     @GetMapping("/customer/bookings")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<?> getCustomerBookings(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        Customer customer = customerRepository.findById(userDetails.getId())
+        User customer = userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
-
-        List<Booking> bookings = bookingRepository.findByCustomerWithDetails(customer);
+        List<Booking> bookings = bookingRepository.findByCustomerUserWithDetails(customer);
         return ResponseEntity.ok(bookings);
     }
 
@@ -308,7 +308,7 @@ public class BookingController {
             @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-        Booking booking = bookingRepository.findById(id)
+        Booking booking = bookingRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> new RuntimeException("Booking not found."));
 
         if (!booking.getCustomer().getId().equals(userDetails.getId())) {

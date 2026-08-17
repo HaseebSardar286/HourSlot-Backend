@@ -39,6 +39,10 @@ public class Category {
     @Builder.Default
     private boolean active = true;
 
+    @Column(name = "sort_order", nullable = false)
+    @Builder.Default
+    private int sortOrder = 0;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     @JsonIgnoreProperties({"subcategories", "parent"})

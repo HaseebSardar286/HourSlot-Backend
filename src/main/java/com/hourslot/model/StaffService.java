@@ -28,5 +28,5 @@ public class StaffService {
     private Service service;
 
     @Column(name = "price_override")
-    private Double priceOverride; // null means use base service price
+    private Double priceOverride;
 }

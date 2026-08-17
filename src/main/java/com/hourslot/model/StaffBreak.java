@@ -1,17 +1,20 @@
 package com.hourslot.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
+
 import java.time.LocalTime;
 
 @Entity
-@Table(name = "breaks")
+@Table(name = "staff_breaks")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Break {
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+public class StaffBreak {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -19,7 +22,7 @@ public class Break {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "working_hour_id", nullable = false)
-    private WorkingHour workingHour;
+    private StaffWorkingHour workingHour;
 
     @NotNull
     @Column(name = "start_time", nullable = false)

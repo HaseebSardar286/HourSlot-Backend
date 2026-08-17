@@ -3,8 +3,8 @@ package com.hourslot.repository;
 import com.hourslot.model.Booking;
 import com.hourslot.model.BookingStatus;
 import com.hourslot.model.Branch;
-import com.hourslot.model.Customer;
 import com.hourslot.model.Staff;
+import com.hourslot.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,11 +17,18 @@ import java.util.Optional;
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
+    @Query("""
+            SELECT DISTINCT b FROM Booking b
+            JOIN b.items i
+            WHERE i.staff = :staff
+              AND b.bookingTime BETWEEN :start AND :end
+              AND b.status IN :statuses
+            """)
     List<Booking> findByStaffAndBookingTimeBetweenAndStatusIn(
-            Staff staff,
-            LocalDateTime start,
-            LocalDateTime end,
-            List<BookingStatus> statuses
+            @Param("staff") Staff staff,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end,
+            @Param("statuses") List<BookingStatus> statuses
     );
 
     List<Booking> findByBranchAndBookingTimeBetweenAndStatusIn(
@@ -35,12 +42,12 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     @Query("""
             SELECT DISTINCT b FROM Booking b
-            LEFT JOIN FETCH b.customer c
-            LEFT JOIN FETCH c.user
+            LEFT JOIN FETCH b.customerUser
             LEFT JOIN FETCH b.branch br
             LEFT JOIN FETCH br.business biz
-            LEFT JOIN FETCH b.service
-            LEFT JOIN FETCH b.staff
+            LEFT JOIN FETCH b.items i
+            LEFT JOIN FETCH i.service
+            LEFT JOIN FETCH i.staff
             WHERE b.branch = :branch
             ORDER BY b.bookingTime DESC
             """)
@@ -48,25 +55,25 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     @Query("""
             SELECT DISTINCT b FROM Booking b
-            LEFT JOIN FETCH b.customer c
-            LEFT JOIN FETCH c.user
+            LEFT JOIN FETCH b.customerUser
             LEFT JOIN FETCH b.branch br
             LEFT JOIN FETCH br.business biz
-            LEFT JOIN FETCH b.service
-            LEFT JOIN FETCH b.staff
-            WHERE b.customer = :customer
+            LEFT JOIN FETCH b.items i
+            LEFT JOIN FETCH i.service
+            LEFT JOIN FETCH i.staff
+            WHERE b.customerUser = :customer
             ORDER BY b.bookingTime DESC
             """)
-    List<Booking> findByCustomerWithDetails(@Param("customer") Customer customer);
+    List<Booking> findByCustomerUserWithDetails(@Param("customer") User customer);
 
     @Query("""
-            SELECT b FROM Booking b
-            LEFT JOIN FETCH b.customer c
-            LEFT JOIN FETCH c.user
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.customerUser
             LEFT JOIN FETCH b.branch br
             LEFT JOIN FETCH br.business biz
-            LEFT JOIN FETCH b.service
-            LEFT JOIN FETCH b.staff
+            LEFT JOIN FETCH b.items i
+            LEFT JOIN FETCH i.service
+            LEFT JOIN FETCH i.staff
             LEFT JOIN FETCH b.customerPackage
             WHERE b.id = :id
             """)
@@ -74,5 +81,5 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     List<Booking> findByBranchOrderByBookingTimeDesc(Branch branch);
 
-    List<Booking> findByCustomerOrderByBookingTimeDesc(Customer customer);
+    List<Booking> findByCustomerUserOrderByBookingTimeDesc(User customerUser);
 }

@@ -8,9 +8,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -22,7 +25,10 @@ public class BookingService {
     private BookingRepository bookingRepository;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private UserRepository userRepository;
+
+    @Autowired
+    private CustomerProfileRepository customerProfileRepository;
 
     @Autowired
     private BranchRepository branchRepository;
@@ -32,12 +38,6 @@ public class BookingService {
 
     @Autowired
     private StaffRepository staffRepository;
-
-    @Autowired
-    private WorkingHourRepository workingHourRepository;
-
-    @Autowired
-    private HolidayRepository holidayRepository;
 
     @Autowired
     private StaffServiceRepository staffServiceRepository;
@@ -50,6 +50,15 @@ public class BookingService {
 
     @Autowired
     private CustomerPackageRepository customerPackageRepository;
+
+    @Autowired
+    private ScheduleService scheduleService;
+
+    @Autowired
+    private TenancyService tenancyService;
+
+    @Autowired
+    private BookingStatusHistoryRepository bookingStatusHistoryRepository;
 
     @Transactional
     public Booking createBooking(Long customerId, Long branchId, Long serviceId, Long staffId, LocalDateTime bookingTime) {
@@ -67,8 +76,10 @@ public class BookingService {
                                  LocalDateTime bookingTime, String clientNotes, Long customerPackageId) {
         log.info("Creating booking customerId={} branchId={} serviceId={} staffId={} time={} packageId={}",
                 customerId, branchId, serviceId, staffId, bookingTime, customerPackageId);
-        Customer customer = customerRepository.findById(customerId)
+        User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
+        customerProfileRepository.findById(customerId)
+                .orElseGet(() -> customerProfileRepository.save(CustomerProfile.builder().user(customer).build()));
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
         com.hourslot.model.Service service = serviceRepository.findById(serviceId)
@@ -101,143 +112,48 @@ public class BookingService {
         }
     }
 
-    private Booking createBookingInternal(Customer customer, Branch branch, com.hourslot.model.Service service,
+    private Booking createBookingInternal(User customer, Branch branch, com.hourslot.model.Service service,
                                           Staff staff, LocalDateTime bookingTime, String clientNotes, String lockKey, Long customerPackageId) {
         LocalDateTime endTime = bookingTime.plusMinutes(service.getDurationMinutes());
+        validateSlot(branch, staff, service, bookingTime, endTime, null);
 
-        // 1. Basic Working Hours Validation
-        DayOfWeek day = bookingTime.getDayOfWeek();
-        int dayNum = day.getValue(); // 1 = Mon, 7 = Sun
-        
-        List<WorkingHour> whs;
-        if (staff != null) {
-            whs = workingHourRepository.findByStaffOrderByDayOfWeekAsc(staff);
-            if (whs.isEmpty()) {
-                whs = workingHourRepository.findByBranchAndStaffIsNullOrderByDayOfWeekAsc(branch);
-            }
-        } else {
-            whs = workingHourRepository.findByBranchAndStaffIsNullOrderByDayOfWeekAsc(branch);
-        }
-
-        WorkingHour dayConfig = whs.stream()
-                .filter(w -> w.getDayOfWeek() == dayNum)
-                .findFirst()
-                .orElse(null);
-
-        if (dayConfig == null || dayConfig.isClosed()) {
-            throw new RuntimeException("The selected date/time is outside working hours (Closed).");
-        }
-
-        LocalTime startLocal = bookingTime.toLocalTime();
-        LocalTime endLocal = endTime.toLocalTime();
-
-        if (dayConfig.getStartTime() == null || dayConfig.getEndTime() == null ||
-                startLocal.isBefore(dayConfig.getStartTime()) || endLocal.isAfter(dayConfig.getEndTime())) {
-            throw new RuntimeException("The selected slot is outside working shifts.");
-        }
-
-        // 2. Break Periods Validation
-        if (dayConfig.getBreaks() != null) {
-            for (Break br : dayConfig.getBreaks()) {
-                if (startLocal.isBefore(br.getEndTime()) && endLocal.isAfter(br.getStartTime())) {
-                    throw new RuntimeException("The selected slot overlaps with a scheduled break.");
-                }
-            }
-        }
-
-        // 3. Holiday Closure Validation
-        List<Holiday> hols;
-        if (staff != null) {
-            hols = holidayRepository.findByStaffAndDate(staff, bookingTime.toLocalDate());
-            if (hols.isEmpty()) {
-                hols = holidayRepository.findByBranchAndDate(branch, bookingTime.toLocalDate());
-            }
-        } else {
-            hols = holidayRepository.findByBranchAndDate(branch, bookingTime.toLocalDate());
-        }
-
-        if (!hols.isEmpty()) {
-            throw new RuntimeException("The selected date is scheduled as a holiday or absence.");
-        }
-
-        // 4. Concurrency & Overlapping Bookings Validation
-        List<BookingStatus> activeStatuses = List.of(BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS);
-
-        if (staff != null) {
-            List<Booking> overlapping = bookingRepository.findByStaffAndBookingTimeBetweenAndStatusIn(
-                    staff,
-                    bookingTime.minusMinutes(service.getBufferMinutes()).minusMinutes(service.getDurationMinutes()),
-                    endTime.plusMinutes(service.getBufferMinutes()),
-                    activeStatuses
-            );
-
-            for (Booking ob : overlapping) {
-                LocalDateTime obStart = ob.getBookingTime();
-                LocalDateTime obEnd = ob.getEndTime();
-
-                LocalDateTime bStartEff = bookingTime;
-                LocalDateTime bEndEff = endTime.plusMinutes(service.getBufferMinutes());
-                LocalDateTime obStartEff = obStart;
-                LocalDateTime obEndEff = obEnd.plusMinutes(ob.getService().getBufferMinutes());
-
-                if (bStartEff.isBefore(obEndEff) && bEndEff.isAfter(obStartEff)) {
-                    throw new RuntimeException("The selected staff member has an overlapping booking during this slot.");
-                }
-            }
-        } else {
-            // Staff-less / capacity-aware overlap check
-            List<Booking> branchOverlaps = bookingRepository.findByBranchAndBookingTimeBetweenAndStatusIn(
-                    branch,
-                    bookingTime.minusMinutes(service.getDurationMinutes()),
-                    endTime.plusMinutes(service.getBufferMinutes()),
-                    activeStatuses
-            );
-            int concurrent = 0;
-            for (Booking ob : branchOverlaps) {
-                if (!ob.getService().getId().equals(service.getId()) && !service.isGroupService()) {
-                    continue;
-                }
-                LocalDateTime bStartEff = bookingTime;
-                LocalDateTime bEndEff = endTime.plusMinutes(service.getBufferMinutes());
-                LocalDateTime obEndEff = ob.getEndTime().plusMinutes(ob.getService().getBufferMinutes());
-                if (bStartEff.isBefore(obEndEff) && bEndEff.isAfter(ob.getBookingTime())) {
-                    concurrent++;
-                }
-            }
-            int maxConcurrent = service.getMaxConcurrent() > 0 ? service.getMaxConcurrent()
-                    : (service.getCapacity() > 0 ? service.getCapacity() : 1);
-            if (concurrent >= maxConcurrent) {
-                throw new RuntimeException("No capacity left for this service at the selected time.");
-            }
-        }
-
-        // 5. Price Computation (Custom Overrides + Peak surge multipliers)
-        double basePrice = service.getPrice();
+        BigDecimal basePrice = service.getBasePrice() == null ? BigDecimal.ZERO : service.getBasePrice();
         if (staff != null) {
             StaffService mapping = staffServiceRepository.findByStaffAndService(staff, service).orElse(null);
             if (mapping != null && mapping.getPriceOverride() != null) {
-                basePrice = mapping.getPriceOverride();
+                basePrice = BigDecimal.valueOf(mapping.getPriceOverride());
             }
         }
 
-        // Apply peak pricing multiplier
-        double multiplier = 1.0;
+        DayOfWeek day = bookingTime.getDayOfWeek();
+        int dayNum = day.getValue();
+        LocalTime startLocal = bookingTime.toLocalTime();
+        LocalTime endLocal = endTime.toLocalTime();
+
+        BigDecimal multiplier = BigDecimal.ONE;
         List<TimeOfDayPricing> peakRules = timeOfDayPricingRepository.findByServiceAndDayOfWeek(service, dayNum);
         for (TimeOfDayPricing rule : peakRules) {
+            if (!rule.isActive()) {
+                continue;
+            }
             if (startLocal.isBefore(rule.getEndTime()) && endLocal.isAfter(rule.getStartTime())) {
-                multiplier = Math.max(multiplier, rule.getPriceMultiplier());
+                BigDecimal candidate = BigDecimal.valueOf(rule.getPriceMultiplier());
+                if (candidate.compareTo(multiplier) > 0) {
+                    multiplier = candidate;
+                }
             }
         }
-        
-        double finalPrice = basePrice * multiplier;
+
+        BigDecimal finalPrice = basePrice.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
 
         String paymentStatus = "UNPAID";
+        String paymentMethod = "VENUE";
         CustomerPackage customerPackage = null;
 
         if (customerPackageId != null) {
             customerPackage = customerPackageRepository.findById(customerPackageId)
                     .orElseThrow(() -> new RuntimeException("Selected package was not found."));
-            if (!customerPackage.getCustomer().getId().equals(customer.getId())) {
+            if (!customerPackage.getCustomerUser().getId().equals(customer.getId())) {
                 throw new RuntimeException("Selected package does not belong to this customer.");
             }
             if (!customerPackage.getStatus().equals("ACTIVE") || customerPackage.getSessionsRemaining() <= 0) {
@@ -248,65 +164,168 @@ public class BookingService {
                 customerPackageRepository.save(customerPackage);
                 throw new RuntimeException("Selected package has expired.");
             }
-            
-            // Check if service is included in this package
+
             boolean isIncluded = customerPackage.getServicePackage().getServices().stream()
                     .anyMatch(s -> s.getId().equals(service.getId()));
             if (!isIncluded) {
                 throw new RuntimeException("This service is not included in the selected package.");
             }
 
-            // Decrement sessions
             customerPackage.setSessionsRemaining(customerPackage.getSessionsRemaining() - 1);
             if (customerPackage.getSessionsRemaining() <= 0) {
                 customerPackage.setStatus("EXHAUSTED");
             }
             customerPackageRepository.save(customerPackage);
             paymentStatus = "PAID (Package)";
+            paymentMethod = "PACKAGE";
         }
 
-        // 6. Persist Booking
+        Business business = branch.getBusiness();
         Booking booking = Booking.builder()
-                .customer(customer)
+                .customerUser(customer)
+                .organization(business.getOrganization())
+                .business(business)
                 .branch(branch)
-                .service(service)
-                .staff(staff)
                 .bookingTime(bookingTime)
                 .endTime(endTime)
-                .price(finalPrice)
+                .totalPrice(finalPrice)
+                .currency(service.getCurrency() == null ? "USD" : service.getCurrency())
                 .status(BookingStatus.CONFIRMED)
                 .paymentStatus(paymentStatus)
+                .paymentMethod(paymentMethod)
+                .source("MARKETPLACE")
                 .customerPackage(customerPackage)
                 .clientNotes(clientNotes)
+                .items(new ArrayList<>())
                 .build();
 
+        BookingItem item = BookingItem.builder()
+                .booking(booking)
+                .service(service)
+                .staff(staff)
+                .startTime(bookingTime)
+                .endTime(endTime)
+                .unitPrice(basePrice)
+                .priceMultiplier(multiplier)
+                .lineTotal(finalPrice)
+                .sortOrder(0)
+                .build();
+        booking.getItems().add(item);
+
         Booking saved = bookingRepository.save(booking);
+        saved.setPublicCode("HS" + String.format("%08d", saved.getId()));
+        saved = bookingRepository.save(saved);
+
+        bookingStatusHistoryRepository.save(BookingStatusHistory.builder()
+                .booking(saved)
+                .fromStatus(null)
+                .toStatus(saved.getStatus().name())
+                .changedBy(customer)
+                .reason("CREATED")
+                .build());
+
         slotLockService.release(lockKey);
         log.info("Booking created id={} customerId={} status={} paymentStatus={}",
                 saved.getId(), customer.getId(), saved.getStatus(), saved.getPaymentStatus());
         return saved;
     }
 
+    private void validateSlot(Branch branch, Staff staff, com.hourslot.model.Service service,
+                              LocalDateTime bookingTime, LocalDateTime endTime, Long excludeBookingId) {
+        int dayNum = bookingTime.getDayOfWeek().getValue();
+        ScheduleService.DayHours dayConfig = scheduleService.resolveDayHours(branch, staff, dayNum)
+                .orElse(null);
+        if (dayConfig == null || dayConfig.isClosed()) {
+            throw new RuntimeException("The selected date/time is outside working hours (Closed).");
+        }
+
+        LocalTime startLocal = bookingTime.toLocalTime();
+        LocalTime endLocal = endTime.toLocalTime();
+        if (dayConfig.getStartTime() == null || dayConfig.getEndTime() == null ||
+                startLocal.isBefore(dayConfig.getStartTime()) || endLocal.isAfter(dayConfig.getEndTime())) {
+            throw new RuntimeException("The selected slot is outside working shifts.");
+        }
+
+        if (dayConfig.getBreaks() != null) {
+            for (ScheduleService.TimeWindow br : dayConfig.getBreaks()) {
+                if (startLocal.isBefore(br.getEndTime()) && endLocal.isAfter(br.getStartTime())) {
+                    throw new RuntimeException("The selected slot overlaps with a scheduled break.");
+                }
+            }
+        }
+
+        if (scheduleService.isHoliday(branch, staff, bookingTime.toLocalDate())) {
+            throw new RuntimeException("The selected date is scheduled as a holiday or absence.");
+        }
+
+        List<BookingStatus> activeStatuses = List.of(BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS);
+
+        if (staff != null) {
+            List<Booking> overlapping = bookingRepository.findByStaffAndBookingTimeBetweenAndStatusIn(
+                    staff,
+                    bookingTime.minusMinutes(service.getBufferMinutes()).minusMinutes(service.getDurationMinutes()),
+                    endTime.plusMinutes(service.getBufferMinutes()),
+                    activeStatuses
+            );
+            for (Booking ob : overlapping) {
+                if (excludeBookingId != null && ob.getId().equals(excludeBookingId)) {
+                    continue;
+                }
+                com.hourslot.model.Service obService = ob.getService();
+                LocalDateTime bEndEff = endTime.plusMinutes(service.getBufferMinutes());
+                LocalDateTime obEndEff = ob.getEndTime().plusMinutes(obService == null ? 0 : obService.getBufferMinutes());
+                if (bookingTime.isBefore(obEndEff) && bEndEff.isAfter(ob.getBookingTime())) {
+                    throw new RuntimeException("The selected staff member has an overlapping booking during this slot.");
+                }
+            }
+        } else {
+            List<Booking> branchOverlaps = bookingRepository.findByBranchAndBookingTimeBetweenAndStatusIn(
+                    branch,
+                    bookingTime.minusMinutes(service.getDurationMinutes()),
+                    endTime.plusMinutes(service.getBufferMinutes()),
+                    activeStatuses
+            );
+            int concurrent = 0;
+            for (Booking ob : branchOverlaps) {
+                if (excludeBookingId != null && ob.getId().equals(excludeBookingId)) {
+                    continue;
+                }
+                com.hourslot.model.Service obService = ob.getService();
+                if (obService != null && !obService.getId().equals(service.getId()) && !service.isGroupService()) {
+                    continue;
+                }
+                LocalDateTime bEndEff = endTime.plusMinutes(service.getBufferMinutes());
+                int obBuffer = obService == null ? 0 : obService.getBufferMinutes();
+                LocalDateTime obEndEff = ob.getEndTime().plusMinutes(obBuffer);
+                if (bookingTime.isBefore(obEndEff) && bEndEff.isAfter(ob.getBookingTime())) {
+                    concurrent++;
+                }
+            }
+            int maxConcurrent = service.getMaxConcurrent() > 0 ? service.getMaxConcurrent()
+                    : (service.getCapacity() > 0 ? service.getCapacity() : 1);
+            if (concurrent >= maxConcurrent) {
+                throw new RuntimeException("No capacity left for this service at the selected time.");
+            }
+        }
+    }
+
     @Transactional
     public Booking rescheduleBooking(Long bookingId, LocalDateTime newTime, UserRole role, Long userId) {
-        log.info("Reschedule requested bookingId={} newTime={} role={} userId={}", bookingId, newTime, role, userId);
-        Booking booking = bookingRepository.findById(bookingId)
+        log.info("Reschedule requested bookingId={} newTime={} role={} userId={}", bookingId, role, userId, newTime);
+        Booking booking = bookingRepository.findByIdWithDetails(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found."));
 
-        // Authorization check
         boolean authorized = false;
         if (role == UserRole.SUPER_ADMIN) {
             authorized = true;
-        } else if (role == UserRole.CUSTOMER && booking.getCustomer().getId().equals(userId)) {
+        } else if (role == UserRole.CUSTOMER && booking.getCustomer() != null && booking.getCustomer().getId().equals(userId)) {
             authorized = true;
         } else if (role == UserRole.BUSINESS_OWNER) {
-            if (booking.getBranch().getBusiness().getOwner().getId().equals(userId)) {
-                authorized = true;
-            }
+            User owner = tenancyService.findOwner(booking.getBranch().getBusiness()).orElse(null);
+            authorized = owner != null && owner.getId().equals(userId);
         } else if (role == UserRole.BUSINESS_STAFF) {
-            if (booking.getStaff() != null && booking.getStaff().getUser().getId().equals(userId)) {
-                authorized = true;
-            }
+            Staff staff = booking.getStaff();
+            authorized = staff != null && staff.getUser() != null && staff.getUser().getId().equals(userId);
         }
 
         if (!authorized) {
@@ -316,6 +335,9 @@ public class BookingService {
         Branch branch = booking.getBranch();
         Staff staff = booking.getStaff();
         com.hourslot.model.Service service = booking.getService();
+        if (service == null) {
+            throw new RuntimeException("Booking is missing service data.");
+        }
 
         String lockKey = slotLockService.buildLockKey(branch.getId(), staff != null ? staff.getId() : null, service.getId(), newTime);
         if (!slotLockService.tryAcquire(lockKey)) {
@@ -324,124 +346,24 @@ public class BookingService {
 
         try {
             LocalDateTime endTime = newTime.plusMinutes(service.getDurationMinutes());
+            validateSlot(branch, staff, service, newTime, endTime, bookingId);
 
-            // 1. Basic Working Hours Validation
-            DayOfWeek day = newTime.getDayOfWeek();
-            int dayNum = day.getValue();
-            
-            List<WorkingHour> whs;
-            if (staff != null) {
-                whs = workingHourRepository.findByStaffOrderByDayOfWeekAsc(staff);
-                if (whs.isEmpty()) {
-                    whs = workingHourRepository.findByBranchAndStaffIsNullOrderByDayOfWeekAsc(branch);
-                }
-            } else {
-                whs = workingHourRepository.findByBranchAndStaffIsNullOrderByDayOfWeekAsc(branch);
-            }
-
-            WorkingHour dayConfig = whs.stream()
-                    .filter(w -> w.getDayOfWeek() == dayNum)
-                    .findFirst()
-                    .orElse(null);
-
-            if (dayConfig == null || dayConfig.isClosed()) {
-                throw new RuntimeException("The selected date/time is outside working hours (Closed).");
-            }
-
-            LocalTime startLocal = newTime.toLocalTime();
-            LocalTime endLocal = endTime.toLocalTime();
-
-            if (dayConfig.getStartTime() == null || dayConfig.getEndTime() == null ||
-                    startLocal.isBefore(dayConfig.getStartTime()) || endLocal.isAfter(dayConfig.getEndTime())) {
-                throw new RuntimeException("The selected slot is outside working shifts.");
-            }
-
-            // 2. Break Periods Validation
-            if (dayConfig.getBreaks() != null) {
-                for (Break br : dayConfig.getBreaks()) {
-                    if (startLocal.isBefore(br.getEndTime()) && endLocal.isAfter(br.getStartTime())) {
-                        throw new RuntimeException("The selected slot overlaps with a scheduled break.");
-                    }
-                }
-            }
-
-            // 3. Holiday Closure Validation
-            List<Holiday> hols;
-            if (staff != null) {
-                hols = holidayRepository.findByStaffAndDate(staff, newTime.toLocalDate());
-                if (hols.isEmpty()) {
-                    hols = holidayRepository.findByBranchAndDate(branch, newTime.toLocalDate());
-                }
-            } else {
-                hols = holidayRepository.findByBranchAndDate(branch, newTime.toLocalDate());
-            }
-
-            if (!hols.isEmpty()) {
-                throw new RuntimeException("The selected date is scheduled as a holiday or absence.");
-            }
-
-            // 4. Concurrency & Overlapping Bookings Validation
-            List<BookingStatus> activeStatuses = List.of(BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS);
-
-            if (staff != null) {
-                List<Booking> overlapping = bookingRepository.findByStaffAndBookingTimeBetweenAndStatusIn(
-                        staff,
-                        newTime.minusMinutes(service.getBufferMinutes()).minusMinutes(service.getDurationMinutes()),
-                        endTime.plusMinutes(service.getBufferMinutes()),
-                        activeStatuses
-                );
-
-                for (Booking ob : overlapping) {
-                    if (ob.getId().equals(bookingId)) {
-                        continue; // Exclude current booking
-                    }
-                    LocalDateTime obStart = ob.getBookingTime();
-                    LocalDateTime obEnd = ob.getEndTime();
-
-                    LocalDateTime bStartEff = newTime;
-                    LocalDateTime bEndEff = endTime.plusMinutes(service.getBufferMinutes());
-                    LocalDateTime obStartEff = obStart;
-                    LocalDateTime obEndEff = obEnd.plusMinutes(ob.getService().getBufferMinutes());
-
-                    if (bStartEff.isBefore(obEndEff) && bEndEff.isAfter(obStartEff)) {
-                        throw new RuntimeException("The selected staff member has an overlapping booking during this slot.");
-                    }
-                }
-            } else {
-                List<Booking> branchOverlaps = bookingRepository.findByBranchAndBookingTimeBetweenAndStatusIn(
-                        branch,
-                        newTime.minusMinutes(service.getDurationMinutes()),
-                        endTime.plusMinutes(service.getBufferMinutes()),
-                        activeStatuses
-                );
-                int concurrent = 0;
-                for (Booking ob : branchOverlaps) {
-                    if (ob.getId().equals(bookingId)) {
-                        continue; // Exclude current booking
-                    }
-                    if (!ob.getService().getId().equals(service.getId()) && !service.isGroupService()) {
-                        continue;
-                    }
-                    LocalDateTime bStartEff = newTime;
-                    LocalDateTime bEndEff = endTime.plusMinutes(service.getBufferMinutes());
-                    LocalDateTime obEndEff = ob.getEndTime().plusMinutes(ob.getService().getBufferMinutes());
-                    if (bStartEff.isBefore(obEndEff) && bEndEff.isAfter(ob.getBookingTime())) {
-                        concurrent++;
-                    }
-                }
-                int maxConcurrent = service.getMaxConcurrent() > 0 ? service.getMaxConcurrent()
-                        : (service.getCapacity() > 0 ? service.getCapacity() : 1);
-                if (concurrent >= maxConcurrent) {
-                    throw new RuntimeException("No capacity left for this service at the selected time.");
-                }
-            }
-
-            // Update time
+            BookingStatus previous = booking.getStatus();
             booking.setBookingTime(newTime);
             booking.setEndTime(endTime);
             booking.setStatus(BookingStatus.CONFIRMED);
+            if (booking.primaryItem() != null) {
+                booking.primaryItem().setStartTime(newTime);
+                booking.primaryItem().setEndTime(endTime);
+            }
 
             Booking saved = bookingRepository.save(booking);
+            bookingStatusHistoryRepository.save(BookingStatusHistory.builder()
+                    .booking(saved)
+                    .fromStatus(previous.name())
+                    .toStatus(saved.getStatus().name())
+                    .reason("RESCHEDULED")
+                    .build());
             slotLockService.release(lockKey);
             return saved;
         } catch (RuntimeException ex) {

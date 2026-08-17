@@ -35,7 +35,8 @@ public class NotificationService {
         notificationRepository.save(Notification.builder()
                 .user(managedUser)
                 .title(title)
-                .message(message)
+                .body(message)
+                .channel("IN_APP")
                 .read(false)
                 .build());
         log.info("Notification created for userId={} title={}", user.getId(), title);

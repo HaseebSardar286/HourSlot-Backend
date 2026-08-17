@@ -24,7 +24,7 @@ public class CustomerPackageController {
     private CustomerPackageRepository customerPackageRepository;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private UserRepository userRepository;
 
     @Autowired
     private ServicePackageRepository servicePackageRepository;
@@ -35,9 +35,9 @@ public class CustomerPackageController {
     @GetMapping("/customer/packages")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<?> getCustomerPackages(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        Customer customer = customerRepository.findById(userDetails.getId())
+        User customer = userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
-        List<CustomerPackage> pkgs = customerPackageRepository.findByCustomerOrderByCreatedAtDesc(customer);
+        List<CustomerPackage> pkgs = customerPackageRepository.findByCustomerUserOrderByCreatedAtDesc(customer);
         return ResponseEntity.ok(pkgs);
     }
 
@@ -47,13 +47,13 @@ public class CustomerPackageController {
             @RequestParam Long serviceId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         
-        Customer customer = customerRepository.findById(userDetails.getId())
+        User customer = userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
 
         com.hourslot.model.Service service = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new RuntimeException("Service not found."));
 
-        List<CustomerPackage> allActive = customerPackageRepository.findByCustomerAndStatus(customer, "ACTIVE");
+        List<CustomerPackage> allActive = customerPackageRepository.findByCustomerUserAndStatus(customer, "ACTIVE");
         List<CustomerPackage> eligible = new ArrayList<>();
 
         for (CustomerPackage cp : allActive) {
@@ -87,7 +87,7 @@ public class CustomerPackageController {
             @RequestParam(required = false, defaultValue = "VENUE") String paymentMethod,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-        Customer customer = customerRepository.findById(userDetails.getId())
+        User customer = userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
 
         ServicePackage servicePackage = servicePackageRepository.findById(id)
@@ -106,8 +106,9 @@ public class CustomerPackageController {
         }
 
         CustomerPackage cp = CustomerPackage.builder()
-                .customer(customer)
+                .customerUser(customer)
                 .servicePackage(servicePackage)
+                .business(servicePackage.getBusiness())
                 .sessionsRemaining(servicePackage.getSessionsCount())
                 .expiresAt(expiresAt)
                 .status("ACTIVE")

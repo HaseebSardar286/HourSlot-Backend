@@ -4,6 +4,9 @@ import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.*;
 import com.hourslot.repository.*;
 import com.hourslot.security.CustomUserDetails;
+import com.hourslot.service.MediaAssetService;
+import com.hourslot.service.ScheduleService;
+import com.hourslot.service.TenancyService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -44,7 +47,35 @@ public class BusinessController {
     private StaffServiceRepository staffServiceRepository;
 
     @Autowired
+    private TenancyService tenancyService;
+
+    @Autowired
+    private MediaAssetService mediaAssetService;
+
+    @Autowired
+    private BranchWorkingHourRepository branchWorkingHourRepository;
+
+    @Autowired
+    private StaffWorkingHourRepository staffWorkingHourRepository;
+
+    @Autowired
+    private BranchBreakRepository branchBreakRepository;
+
+    @Autowired
+    private StaffBreakRepository staffBreakRepository;
+
+    @Autowired
+    private BranchHolidayRepository branchHolidayRepository;
+
+    @Autowired
+    private StaffTimeOffRepository staffTimeOffRepository;
+
+    @Autowired
+    private ScheduleService scheduleService;
+
+    @Autowired
     private TimeOfDayPricingRepository timeOfDayPricingRepository;
+
 
     @Data
     public static class BusinessRegistrationRequest {
@@ -96,20 +127,22 @@ public class BusinessController {
         
         User owner = userRepository.findById(userDetails.getId()).orElseThrow();
 
-        if (businessRepository.existsByOwner(owner)) {
+        if (businessRepository.existsByMemberUserId(owner.getId())) {
             return ResponseEntity
                     .badRequest()
                     .body(new MessageResponse("Error: You have already registered a business!"));
         }
 
+        Organization organization = tenancyService.provisionOrganization(owner, request.getName());
         Business business = Business.builder()
                 .name(request.getName())
                 .description(request.getDescription())
-                .logoUrl(request.getLogoUrl())
-                .owner(owner)
+                .organization(organization)
                 .build();
-
-        businessRepository.save(business);
+        business = businessRepository.save(business);
+        if (request.getLogoUrl() != null && !request.getLogoUrl().isBlank()) {
+            mediaAssetService.replaceLogo(business.getId(), request.getLogoUrl());
+        }
 
         return ResponseEntity.ok(new MessageResponse("Business registration request submitted successfully! Pending admin verification."));
     }
@@ -118,7 +151,7 @@ public class BusinessController {
     @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<?> getBusinessProfile(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
         return ResponseEntity.ok(business);
     }
@@ -134,7 +167,7 @@ public class BusinessController {
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
 
         // Allow setup while PENDING so owners can complete onboarding before admin approval.
@@ -163,7 +196,7 @@ public class BusinessController {
     @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<List<Branch>> getBranches(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
 
         List<Branch> branches = branchRepository.findByBusiness(business);
@@ -181,14 +214,14 @@ public class BusinessController {
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
 
         Service service = Service.builder()
                 .business(business)
                 .name(request.getName())
                 .description(request.getDescription())
-                .price(request.getPrice())
+                .basePrice(java.math.BigDecimal.valueOf(request.getPrice()))
                 .durationMinutes(request.getDurationMinutes())
                 .build();
 
@@ -201,7 +234,7 @@ public class BusinessController {
     @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<List<Service>> getServices(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
 
         List<Service> services = serviceRepository.findByBusiness(business);
@@ -223,7 +256,7 @@ public class BusinessController {
 
         // Verify that the branch belongs to the authenticated admin's business
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
 
         if (!branch.getBusiness().getId().equals(business.getId())) {
@@ -239,7 +272,7 @@ public class BusinessController {
         Staff staff = Staff.builder()
                 .branch(branch)
                 .user(staffUser)
-                .name(request.getName())
+                .displayName(request.getName())
                 .designation(request.getDesignation())
                 .build();
 
@@ -253,8 +286,8 @@ public class BusinessController {
     public ResponseEntity<?> getAllStaff(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business;
-        if (user.getRole() == UserRole.BUSINESS_OWNER) {
-            business = businessRepository.findByOwner(user)
+        if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
+            business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found for owner."));
         } else {
             Staff staff = staffRepository.findByUser(user)
@@ -278,8 +311,8 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        if (user.getRole() == UserRole.BUSINESS_OWNER) {
-            Business business = businessRepository.findByOwner(user)
+        if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
+            Business business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found for owner."));
             if (!branch.getBusiness().getId().equals(business.getId())) {
                 return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
@@ -299,15 +332,6 @@ public class BusinessController {
     // ==========================================================================
     // WORKING HOURS, BREAKS & HOLIDAYS MANAGEMENT ENDPOINTS
     // ==========================================================================
-
-    @Autowired
-    private WorkingHourRepository workingHourRepository;
-
-    @Autowired
-    private BreakRepository breakRepository;
-
-    @Autowired
-    private HolidayRepository holidayRepository;
 
     @Data
     public static class WorkingHourRequest {
@@ -350,30 +374,36 @@ public class BusinessController {
 
         // Validate owner
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
         if (!branch.getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
-        Staff staff = null;
-        if (request.getStaffId() != null) {
-            staff = staffRepository.findById(request.getStaffId()).orElseThrow();
-        }
-
         java.time.LocalTime start = request.getStartTime() != null ? java.time.LocalTime.parse(request.getStartTime()) : null;
         java.time.LocalTime end = request.getEndTime() != null ? java.time.LocalTime.parse(request.getEndTime()) : null;
 
-        WorkingHour wh = WorkingHour.builder()
-                .branch(branch)
-                .staff(staff)
-                .dayOfWeek(request.getDayOfWeek())
-                .startTime(start)
-                .endTime(end)
-                .closed(request.getClosed() != null ? request.getClosed() : false)
-                .build();
+        if (request.getStaffId() != null) {
+            Staff staff = staffRepository.findById(request.getStaffId()).orElseThrow();
+            StaffWorkingHour wh = StaffWorkingHour.builder()
+                    .staff(staff)
+                    .dayOfWeek(request.getDayOfWeek())
+                    .startTime(start)
+                    .endTime(end)
+                    .closed(request.getClosed() != null ? request.getClosed() : false)
+                    .build();
+            staffWorkingHourRepository.save(wh);
+        } else {
+            BranchWorkingHour wh = BranchWorkingHour.builder()
+                    .branch(branch)
+                    .dayOfWeek(request.getDayOfWeek())
+                    .startTime(start)
+                    .endTime(end)
+                    .closed(request.getClosed() != null ? request.getClosed() : false)
+                    .build();
+            branchWorkingHourRepository.save(wh);
+        }
 
-        workingHourRepository.save(wh);
         return ResponseEntity.ok(new MessageResponse("Working hours updated successfully!"));
     }
 
@@ -383,16 +413,24 @@ public class BusinessController {
             @PathVariable Long workingHourId,
             @Valid @RequestBody BreakRequest request) {
         
-        WorkingHour workingHour = workingHourRepository.findById(workingHourId)
+        java.util.Optional<BranchWorkingHour> branchHour = branchWorkingHourRepository.findById(workingHourId);
+        if (branchHour.isPresent()) {
+            BranchBreak restBreak = BranchBreak.builder()
+                    .workingHour(branchHour.get())
+                    .startTime(java.time.LocalTime.parse(request.getStartTime()))
+                    .endTime(java.time.LocalTime.parse(request.getEndTime()))
+                    .build();
+            branchBreakRepository.save(restBreak);
+            return ResponseEntity.ok(new MessageResponse("Break period added successfully!"));
+        }
+        StaffWorkingHour staffHour = staffWorkingHourRepository.findById(workingHourId)
                 .orElseThrow(() -> new RuntimeException("Working hours record not found."));
-
-        Break restBreak = Break.builder()
-                .workingHour(workingHour)
+        StaffBreak restBreak = StaffBreak.builder()
+                .workingHour(staffHour)
                 .startTime(java.time.LocalTime.parse(request.getStartTime()))
                 .endTime(java.time.LocalTime.parse(request.getEndTime()))
                 .build();
-
-        breakRepository.save(restBreak);
+        staffBreakRepository.save(restBreak);
         return ResponseEntity.ok(new MessageResponse("Break period added successfully!"));
     }
 
@@ -407,25 +445,30 @@ public class BusinessController {
 
         // Validate owner
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
         if (!branch.getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
-        Staff staff = null;
         if (request.getStaffId() != null) {
-            staff = staffRepository.findById(request.getStaffId()).orElseThrow();
+            Staff staff = staffRepository.findById(request.getStaffId()).orElseThrow();
+            java.time.LocalDate date = java.time.LocalDate.parse(request.getDate());
+            staffTimeOffRepository.save(StaffTimeOff.builder()
+                    .staff(staff)
+                    .startAt(date.atStartOfDay())
+                    .endAt(date.atTime(java.time.LocalTime.MAX))
+                    .reason(request.getDescription())
+                    .status("APPROVED")
+                    .build());
+        } else {
+            branchHolidayRepository.save(BranchHoliday.builder()
+                    .branch(branch)
+                    .holidayDate(java.time.LocalDate.parse(request.getDate()))
+                    .description(request.getDescription())
+                    .build());
         }
 
-        Holiday holiday = Holiday.builder()
-                .branch(branch)
-                .staff(staff)
-                .date(java.time.LocalDate.parse(request.getDate()))
-                .description(request.getDescription())
-                .build();
-
-        holidayRepository.save(holiday);
         return ResponseEntity.ok(new MessageResponse("Holiday date registered successfully!"));
     }
 
@@ -435,14 +478,12 @@ public class BusinessController {
             @Valid @RequestBody BusinessUpdateRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         User owner = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(owner)
+        Business business = tenancyService.findBusinessForUser(owner)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
         business.setName(request.getName());
         business.setDescription(request.getDescription());
-        business.setLogoUrl(request.getLogoUrl());
         business.setRegistrationNumber(request.getRegistrationNumber());
-        business.setGalleryUrls(request.getGalleryUrls());
 
         if (request.getPrimaryCategoryId() != null) {
             Category primary = categoryRepository.findById(request.getPrimaryCategoryId())
@@ -466,6 +507,12 @@ public class BusinessController {
                 .trim());
 
         businessRepository.save(business);
+        if (request.getLogoUrl() != null) {
+            mediaAssetService.replaceLogo(business.getId(), request.getLogoUrl());
+        }
+        if (request.getGalleryUrls() != null) {
+            mediaAssetService.replaceGallery(business.getId(), request.getGalleryUrls());
+        }
         return ResponseEntity.ok(new MessageResponse("Business profile updated successfully!"));
     }
 
@@ -486,7 +533,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!branch.getBusiness().getId().equals(business.getId())) {
@@ -517,7 +564,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!branch.getBusiness().getId().equals(business.getId())) {
@@ -538,7 +585,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Service not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!service.getBusiness().getId().equals(business.getId())) {
@@ -563,7 +610,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Service not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!service.getBusiness().getId().equals(business.getId())) {
@@ -587,7 +634,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!staff.getBranch().getBusiness().getId().equals(business.getId()) ||
@@ -618,7 +665,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Staff member not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!staff.getBranch().getBusiness().getId().equals(business.getId())) {
@@ -639,7 +686,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!branch.getBusiness().getId().equals(business.getId())) {
@@ -652,12 +699,9 @@ public class BusinessController {
             if (!staff.getBranch().getId().equals(branchId)) {
                 return ResponseEntity.badRequest().body(new MessageResponse("Error: Staff does not belong to this branch."));
             }
-            List<WorkingHour> whs = workingHourRepository.findByStaffOrderByDayOfWeekAsc(staff);
-            return ResponseEntity.ok(whs);
-        } else {
-            List<WorkingHour> whs = workingHourRepository.findByBranchAndStaffIsNullOrderByDayOfWeekAsc(branch);
-            return ResponseEntity.ok(whs);
+            return ResponseEntity.ok(staffWorkingHourRepository.findByStaffOrderByDayOfWeekAsc(staff));
         }
+        return ResponseEntity.ok(branchWorkingHourRepository.findByBranchOrderByDayOfWeekAsc(branch));
     }
 
     @GetMapping("/branches/{branchId}/holidays")
@@ -670,7 +714,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!branch.getBusiness().getId().equals(business.getId())) {
@@ -683,12 +727,9 @@ public class BusinessController {
             if (!staff.getBranch().getId().equals(branchId)) {
                 return ResponseEntity.badRequest().body(new MessageResponse("Error: Staff does not belong to this branch."));
             }
-            List<Holiday> holidays = holidayRepository.findByStaffOrderByDateAsc(staff);
-            return ResponseEntity.ok(holidays);
-        } else {
-            List<Holiday> holidays = holidayRepository.findByBranchAndStaffIsNullOrderByDateAsc(branch);
-            return ResponseEntity.ok(holidays);
+            return ResponseEntity.ok(staffTimeOffRepository.findByStaffOrderByStartAtAsc(staff));
         }
+        return ResponseEntity.ok(branchHolidayRepository.findByBranchOrderByHolidayDateAsc(branch));
     }
 
     @DeleteMapping("/working-hours/{id}")
@@ -696,18 +737,24 @@ public class BusinessController {
     public ResponseEntity<?> deleteWorkingHour(
             @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        WorkingHour wh = workingHourRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Working hours record not found."));
-
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!wh.getBranch().getBusiness().getId().equals(business.getId())) {
+        java.util.Optional<BranchWorkingHour> branchHour = branchWorkingHourRepository.findById(id);
+        if (branchHour.isPresent()) {
+            if (!branchHour.get().getBranch().getBusiness().getId().equals(business.getId())) {
+                return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+            }
+            branchWorkingHourRepository.delete(branchHour.get());
+            return ResponseEntity.ok(new MessageResponse("Working hour record removed successfully!"));
+        }
+        StaffWorkingHour staffHour = staffWorkingHourRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Working hours record not found."));
+        if (!staffHour.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
-
-        workingHourRepository.delete(wh);
+        staffWorkingHourRepository.delete(staffHour);
         return ResponseEntity.ok(new MessageResponse("Working hour record removed successfully!"));
     }
 
@@ -716,18 +763,24 @@ public class BusinessController {
     public ResponseEntity<?> deleteHoliday(
             @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        Holiday holiday = holidayRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Holiday record not found."));
-
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!holiday.getBranch().getBusiness().getId().equals(business.getId())) {
+        java.util.Optional<BranchHoliday> holiday = branchHolidayRepository.findById(id);
+        if (holiday.isPresent()) {
+            if (!holiday.get().getBranch().getBusiness().getId().equals(business.getId())) {
+                return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+            }
+            branchHolidayRepository.delete(holiday.get());
+            return ResponseEntity.ok(new MessageResponse("Holiday date cancelled successfully!"));
+        }
+        StaffTimeOff timeOff = staffTimeOffRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Holiday record not found."));
+        if (!timeOff.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
-
-        holidayRepository.delete(holiday);
+        staffTimeOffRepository.delete(timeOff);
         return ResponseEntity.ok(new MessageResponse("Holiday date cancelled successfully!"));
     }
 
@@ -736,18 +789,24 @@ public class BusinessController {
     public ResponseEntity<?> deleteBreak(
             @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        Break restBreak = breakRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Break record not found."));
-
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!restBreak.getWorkingHour().getBranch().getBusiness().getId().equals(business.getId())) {
+        java.util.Optional<BranchBreak> branchBreak = branchBreakRepository.findById(id);
+        if (branchBreak.isPresent()) {
+            if (!branchBreak.get().getWorkingHour().getBranch().getBusiness().getId().equals(business.getId())) {
+                return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
+            }
+            branchBreakRepository.delete(branchBreak.get());
+            return ResponseEntity.ok(new MessageResponse("Break period removed successfully!"));
+        }
+        StaffBreak staffBreak = staffBreakRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Break record not found."));
+        if (!staffBreak.getWorkingHour().getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
-
-        breakRepository.delete(restBreak);
+        staffBreakRepository.delete(staffBreak);
         return ResponseEntity.ok(new MessageResponse("Break period removed successfully!"));
     }
 
@@ -785,7 +844,7 @@ public class BusinessController {
     @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<List<ServicePackage>> getPackages(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
         return ResponseEntity.ok(servicePackageRepository.findByBusiness(business));
     }
@@ -796,7 +855,7 @@ public class BusinessController {
             @Valid @RequestBody PackageRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
         List<Service> services = serviceRepository.findAllById(request.getServiceIds());
@@ -826,7 +885,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Package not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!pkg.getBusiness().getId().equals(business.getId())) {
@@ -858,7 +917,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Package not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         if (!pkg.getBusiness().getId().equals(business.getId())) {
@@ -886,7 +945,7 @@ public class BusinessController {
     @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<List<StaffService>> getStaffServices(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
         return ResponseEntity.ok(staffServiceRepository.findByStaffBranchBusiness(business));
     }
@@ -902,7 +961,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Service not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
         if (!staff.getBranch().getBusiness().getId().equals(business.getId()) ||
@@ -930,7 +989,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Assignment record not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
         if (!ss.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
@@ -951,7 +1010,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Assignment record not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
         if (!ss.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
@@ -984,7 +1043,7 @@ public class BusinessController {
     @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
     public ResponseEntity<List<TimeOfDayPricing>> getTimePricingRules(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
         return ResponseEntity.ok(timeOfDayPricingRepository.findByServiceBusiness(business));
     }
@@ -998,7 +1057,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Service not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
         if (!service.getBusiness().getId().equals(business.getId())) {
@@ -1027,7 +1086,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Pricing override rule not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
         if (!top.getService().getBusiness().getId().equals(business.getId())) {
@@ -1052,7 +1111,7 @@ public class BusinessController {
                 .orElseThrow(() -> new RuntimeException("Pricing override rule not found."));
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
         if (!top.getService().getBusiness().getId().equals(business.getId())) {

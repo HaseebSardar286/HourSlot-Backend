@@ -2,10 +2,12 @@ package com.hourslot.controller;
 
 import com.hourslot.model.*;
 import com.hourslot.repository.*;
+import com.hourslot.service.ScheduleService;
 import com.hourslot.service.SlotLockService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.LocalDateTime;
@@ -29,19 +31,19 @@ public class AvailabilityController {
     private StaffServiceRepository staffServiceRepository;
 
     @Autowired
-    private WorkingHourRepository workingHourRepository;
-
-    @Autowired
-    private BreakRepository breakRepository;
-
-    @Autowired
-    private HolidayRepository holidayRepository;
-
-    @Autowired
     private BookingRepository bookingRepository;
 
     @Autowired
     private SlotLockService slotLockService;
+
+    @Autowired
+    private ScheduleService scheduleService;
+
+    @Autowired
+    private BranchWorkingHourRepository branchWorkingHourRepository;
+
+    @Autowired
+    private StaffWorkingHourRepository staffWorkingHourRepository;
 
     @GetMapping("/branches/{branchId}/slots")
     public ResponseEntity<?> getAvailableSlots(
@@ -56,15 +58,12 @@ public class AvailabilityController {
                 .orElseThrow(() -> new RuntimeException("Service not found."));
 
         LocalDate localDate = LocalDate.parse(date);
-        int dayOfWeek = localDate.getDayOfWeek().getValue(); // 1 = Monday, 7 = Sunday
+        int dayOfWeek = localDate.getDayOfWeek().getValue();
 
-        // 1. Check if the branch is closed due to a holiday
-        List<Holiday> branchHolidays = holidayRepository.findByBranchAndDate(branch, localDate);
-        if (!branchHolidays.isEmpty()) {
+        if (scheduleService.isHoliday(branch, null, localDate)) {
             return ResponseEntity.ok(Collections.emptyList());
         }
 
-        // 2. Resolve target staff list who are assigned to this service
         List<Staff> targetStaff = new ArrayList<>();
         if (staffId != null) {
             Staff staff = staffRepository.findById(staffId)
@@ -72,132 +71,144 @@ public class AvailabilityController {
             if (!staff.getBranch().getId().equals(branchId)) {
                 return ResponseEntity.badRequest().body("Error: Specialist does not belong to this branch.");
             }
-            // Check mapping
             Optional<StaffService> mapping = staffServiceRepository.findByStaffAndService(staff, service);
-            if (mapping.isPresent()) {
+            List<StaffService> anyMappings = staffServiceRepository.findByService(service).stream()
+                    .filter(m -> m.getStaff().getBranch().getId().equals(branchId))
+                    .collect(Collectors.toList());
+            if (mapping.isPresent() || anyMappings.isEmpty()) {
                 targetStaff.add(staff);
             }
         } else {
-            // Find all staff who deliver this service at this branch
             List<StaffService> mappings = staffServiceRepository.findByService(service);
             for (StaffService mapping : mappings) {
                 if (mapping.getStaff().getBranch().getId().equals(branchId)) {
                     targetStaff.add(mapping.getStaff());
                 }
             }
+            if (targetStaff.isEmpty()) {
+                targetStaff.addAll(staffRepository.findByBranch(branch));
+            }
         }
 
         if (targetStaff.isEmpty()) {
-            return ResponseEntity.ok(Collections.emptyList());
+            return ResponseEntity.ok(generateBranchSlots(branch, service, localDate, dayOfWeek));
         }
 
-        // 3. Compute union of available slots across all eligible staff
-        Set<String> uniqueSlots = new TreeSet<>(); // TreeSet keeps slots sorted automatically!
-
+        Set<String> uniqueSlots = new TreeSet<>();
         for (Staff staff : targetStaff) {
-            // Check if staff has a holiday on this day
-            List<Holiday> staffHolidays = holidayRepository.findByStaffAndDate(staff, localDate);
-            if (!staffHolidays.isEmpty()) {
-                continue; // Skip staff member
+            if (scheduleService.isHoliday(branch, staff, localDate)) {
+                continue;
             }
-
-            // Resolve working hours for this staff member
-            // Check staff specific schedule first
-            WorkingHour wh = workingHourRepository.findByStaff(staff).stream()
-                    .filter(h -> h.getDayOfWeek() == dayOfWeek)
-                    .findFirst()
-                    .orElse(null);
-
-            if (wh == null) {
-                // Fallback to branch-level schedule
-                wh = workingHourRepository.findByBranch(branch).stream()
-                        .filter(h -> h.getDayOfWeek() == dayOfWeek && h.getStaff() == null)
-                        .findFirst()
-                        .orElse(null);
-            }
-
-            if (wh == null || wh.isClosed()) {
-                continue; // Skip staff member
-            }
-
-            LocalTime shiftStart = wh.getStartTime();
-            LocalTime shiftEnd = wh.getEndTime();
-            if (shiftStart == null || shiftEnd == null) {
+            ScheduleService.DayHours wh = scheduleService.resolveDayHours(branch, staff, dayOfWeek).orElse(null);
+            if (wh == null || wh.isClosed() || wh.getStartTime() == null || wh.getEndTime() == null) {
                 continue;
             }
 
-            // Load breaks for this working hour record
-            List<Break> breaks = breakRepository.findByWorkingHour(wh);
-
-            // Load bookings for this staff member on this date (not cancelled / rejected)
             LocalDateTime startOfDay = localDate.atStartOfDay();
             LocalDateTime endOfDay = localDate.atTime(LocalTime.MAX);
             List<BookingStatus> activeStatuses = Arrays.asList(
                     BookingStatus.PENDING,
-                    BookingStatus.CONFIRMED
+                    BookingStatus.CONFIRMED,
+                    BookingStatus.IN_PROGRESS
             );
             List<Booking> bookings = bookingRepository.findByStaffAndBookingTimeBetweenAndStatusIn(
                     staff, startOfDay, endOfDay, activeStatuses
             );
 
-            // Generate slots in 30-minute steps
-            LocalTime slotTime = shiftStart;
-            int serviceDuration = service.getDurationMinutes();
-            int serviceBuffer = service.getBufferMinutes();
+            uniqueSlots.addAll(generateSlotsForWindow(
+                    branchId, staff.getId(), service, localDate, wh.getStartTime(), wh.getEndTime(), wh.getBreaks(), bookings));
+        }
 
-            while (slotTime.plusMinutes(serviceDuration).isBefore(shiftEnd) || 
-                   slotTime.plusMinutes(serviceDuration).equals(shiftEnd)) {
+        return ResponseEntity.ok(new ArrayList<>(uniqueSlots));
+    }
 
-                LocalTime slotStart = slotTime;
-                LocalTime slotEnd = slotTime.plusMinutes(serviceDuration);
+    private List<String> generateBranchSlots(Branch branch, Service service, LocalDate localDate, int dayOfWeek) {
+        if (scheduleService.isHoliday(branch, null, localDate)) {
+            return Collections.emptyList();
+        }
+        ScheduleService.DayHours wh = scheduleService.resolveDayHours(branch, null, dayOfWeek).orElse(null);
+        if (wh == null || wh.isClosed() || wh.getStartTime() == null || wh.getEndTime() == null) {
+            return Collections.emptyList();
+        }
 
-                // Check overlap with breaks
-                boolean overlapsBreak = false;
-                for (Break b : breaks) {
+        LocalDateTime startOfDay = localDate.atStartOfDay();
+        LocalDateTime endOfDay = localDate.atTime(LocalTime.MAX);
+        List<BookingStatus> activeStatuses = Arrays.asList(
+                BookingStatus.PENDING,
+                BookingStatus.CONFIRMED,
+                BookingStatus.IN_PROGRESS
+        );
+        List<Booking> bookings = bookingRepository.findByBranchAndBookingTimeBetweenAndStatusIn(
+                branch, startOfDay, endOfDay, activeStatuses
+        );
+
+        return new ArrayList<>(generateSlotsForWindow(
+                branch.getId(), null, service, localDate, wh.getStartTime(), wh.getEndTime(), wh.getBreaks(), bookings));
+    }
+
+    private Set<String> generateSlotsForWindow(
+            Long branchId,
+            Long staffId,
+            Service service,
+            LocalDate localDate,
+            LocalTime shiftStart,
+            LocalTime shiftEnd,
+            List<ScheduleService.TimeWindow> breaks,
+            List<Booking> bookings) {
+
+        Set<String> slots = new TreeSet<>();
+        LocalTime slotTime = shiftStart;
+        int serviceDuration = service.getDurationMinutes() > 0 ? service.getDurationMinutes() : 30;
+        int serviceBuffer = Math.max(0, service.getBufferMinutes());
+
+        while (!slotTime.plusMinutes(serviceDuration).isAfter(shiftEnd)) {
+            LocalTime slotStart = slotTime;
+            LocalTime slotEnd = slotTime.plusMinutes(serviceDuration);
+
+            boolean overlapsBreak = false;
+            if (breaks != null) {
+                for (ScheduleService.TimeWindow b : breaks) {
+                    if (b.getStartTime() == null || b.getEndTime() == null) continue;
                     if (slotStart.isBefore(b.getEndTime()) && slotEnd.isAfter(b.getStartTime())) {
                         overlapsBreak = true;
                         break;
                     }
                 }
+            }
+            if (overlapsBreak) {
+                slotTime = slotTime.plusMinutes(30);
+                continue;
+            }
 
-                if (overlapsBreak) {
+            boolean overlapsBooking = false;
+            for (Booking booking : bookings) {
+                LocalTime bookingStart = booking.getBookingTime().toLocalTime();
+                LocalTime bookingEndWithBuffer = booking.getEndTime().toLocalTime().plusMinutes(serviceBuffer);
+                LocalTime slotEndWithBuffer = slotEnd.plusMinutes(serviceBuffer);
+                if (slotStart.isBefore(bookingEndWithBuffer) && slotEndWithBuffer.isAfter(bookingStart)) {
+                    overlapsBooking = true;
+                    break;
+                }
+            }
+            if (overlapsBooking) {
+                slotTime = slotTime.plusMinutes(30);
+                continue;
+            }
+
+            if (staffId != null) {
+                LocalDateTime slotDateTime = localDate.atTime(slotStart);
+                String lockKey = slotLockService.buildLockKey(branchId, staffId, service.getId(), slotDateTime);
+                if (slotLockService.isLocked(lockKey)) {
                     slotTime = slotTime.plusMinutes(30);
                     continue;
                 }
-
-                // Check overlap with active bookings
-                boolean overlapsBooking = false;
-                for (Booking booking : bookings) {
-                    LocalTime bookingStart = booking.getBookingTime().toLocalTime();
-                    // Add buffer time to blocking window
-                    LocalTime bookingEndWithBuffer = booking.getEndTime().toLocalTime().plusMinutes(serviceBuffer);
-                    
-                    // Slot also needs buffer time
-                    LocalTime slotEndWithBuffer = slotEnd.plusMinutes(serviceBuffer);
-
-                    if (slotStart.isBefore(bookingEndWithBuffer) && slotEndWithBuffer.isAfter(bookingStart)) {
-                        overlapsBooking = true;
-                        break;
-                    }
-                }
-
-                if (!overlapsBooking) {
-                    LocalDateTime slotDateTime = localDate.atTime(slotStart);
-                    String lockKey = slotLockService.buildLockKey(
-                            branchId, staff.getId(), serviceId, slotDateTime);
-                    if (slotLockService.isLocked(lockKey)) {
-                        slotTime = slotTime.plusMinutes(30);
-                        continue;
-                    }
-                    String formatted = String.format("%02d:%02d", slotStart.getHour(), slotStart.getMinute());
-                    uniqueSlots.add(formatted);
-                }
-
-                slotTime = slotTime.plusMinutes(30);
             }
+
+            slots.add(String.format("%02d:%02d", slotStart.getHour(), slotStart.getMinute()));
+            slotTime = slotTime.plusMinutes(30);
         }
 
-        return ResponseEntity.ok(new ArrayList<>(uniqueSlots));
+        return slots;
     }
 
     @GetMapping("/branches/{branchId}/working-hours")
@@ -213,8 +224,8 @@ public class AvailabilityController {
             if (!staff.getBranch().getId().equals(branchId)) {
                 return ResponseEntity.badRequest().body("Error: Staff does not belong to this branch.");
             }
-            return ResponseEntity.ok(workingHourRepository.findByStaffOrderByDayOfWeekAsc(staff));
+            return ResponseEntity.ok(staffWorkingHourRepository.findByStaffOrderByDayOfWeekAsc(staff));
         }
-        return ResponseEntity.ok(workingHourRepository.findByBranchAndStaffIsNullOrderByDayOfWeekAsc(branch));
+        return ResponseEntity.ok(branchWorkingHourRepository.findByBranchOrderByDayOfWeekAsc(branch));
     }
 }

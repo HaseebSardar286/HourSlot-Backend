@@ -37,6 +37,9 @@ public interface BranchRepository extends JpaRepository<Branch, Long> {
             INNER JOIN businesses biz ON biz.id = b.business_id
             WHERE b.latitude IS NOT NULL
               AND b.longitude IS NOT NULL
+              AND b.is_active = true
+              AND b.deleted_at IS NULL
+              AND biz.deleted_at IS NULL
               AND biz.status = 'APPROVED'
               AND biz.is_verified = true
               AND (

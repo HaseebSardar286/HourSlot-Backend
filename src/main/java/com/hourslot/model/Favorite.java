@@ -2,11 +2,12 @@ package com.hourslot.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "favorites", uniqueConstraints = {
-    @UniqueConstraint(name = "uc_customer_business", columnNames = {"customer_id", "business_id"})
+        @UniqueConstraint(name = "uc_customer_business", columnNames = {"customer_user_id", "business_id"})
 })
 @Data
 @NoArgsConstructor
@@ -19,8 +20,8 @@ public class Favorite {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_id", nullable = false)
-    private Customer customer;
+    @JoinColumn(name = "customer_user_id", nullable = false)
+    private User customerUser;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "business_id", nullable = false)

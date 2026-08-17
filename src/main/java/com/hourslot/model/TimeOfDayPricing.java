@@ -38,4 +38,10 @@ public class TimeOfDayPricing {
     @NotNull
     @Column(name = "price_multiplier", nullable = false)
     private double priceMultiplier; // e.g. 1.2 for 20% peak surge
+
+    private String label;
+
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private boolean active = true;
 }

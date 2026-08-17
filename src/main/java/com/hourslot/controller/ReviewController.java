@@ -33,7 +33,7 @@ public class ReviewController {
     private BookingRepository bookingRepository;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private UserRepository userRepository;
 
     @Autowired
     private BusinessRepository businessRepository;
@@ -56,7 +56,7 @@ public class ReviewController {
             @Valid @RequestBody ReviewRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-        Booking booking = bookingRepository.findById(request.getBookingId())
+        Booking booking = bookingRepository.findByIdWithDetails(request.getBookingId())
                 .orElseThrow(() -> new RuntimeException("Booking not found."));
 
         // 1. Check ownership
@@ -76,7 +76,7 @@ public class ReviewController {
 
         // 4. Save review
         Review review = Review.builder()
-                .customer(booking.getCustomer())
+                .customerUser(booking.getCustomerUser())
                 .business(booking.getBranch().getBusiness())
                 .booking(booking)
                 .rating(request.getRating())
@@ -102,18 +102,18 @@ public class ReviewController {
             @PathVariable Long businessId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-        Customer customer = customerRepository.findById(userDetails.getId())
+        User customer = userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
 
         Business business = businessRepository.findById(businessId)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (favoriteRepository.existsByCustomerAndBusiness(customer, business)) {
+        if (favoriteRepository.existsByCustomerUserAndBusiness(customer, business)) {
             return ResponseEntity.badRequest().body(new MessageResponse("Error: Business is already in your favorites."));
         }
 
         Favorite favorite = Favorite.builder()
-                .customer(customer)
+                .customerUser(customer)
                 .business(business)
                 .build();
 
@@ -127,13 +127,13 @@ public class ReviewController {
             @PathVariable Long businessId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-        Customer customer = customerRepository.findById(userDetails.getId())
+        User customer = userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
 
         Business business = businessRepository.findById(businessId)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        Optional<Favorite> favoriteOpt = favoriteRepository.findByCustomerAndBusiness(customer, business);
+        Optional<Favorite> favoriteOpt = favoriteRepository.findByCustomerUserAndBusiness(customer, business);
         if (favoriteOpt.isEmpty()) {
             return ResponseEntity.badRequest().body(new MessageResponse("Error: Business is not in your favorites."));
         }
@@ -145,10 +145,10 @@ public class ReviewController {
     @GetMapping("/favorites")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<?> getCustomerFavorites(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        Customer customer = customerRepository.findById(userDetails.getId())
+        User customer = userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
 
-        List<Favorite> favorites = favoriteRepository.findByCustomer(customer);
+        List<Favorite> favorites = favoriteRepository.findByCustomerUser(customer);
         return ResponseEntity.ok(favorites);
     }
 }

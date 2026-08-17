@@ -26,7 +26,8 @@ public class CustomUserDetails implements UserDetails {
 
     public static CustomUserDetails build(User user) {
         // Prepend ROLE_ to standard RBAC checks in Spring Security
-        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + user.getRole().name());
+        GrantedAuthority authority = new SimpleGrantedAuthority(
+                "ROLE_" + (user.getRole() == null ? "CUSTOMER" : user.getRole().name()));
 
         return new CustomUserDetails(
                 user.getId(),

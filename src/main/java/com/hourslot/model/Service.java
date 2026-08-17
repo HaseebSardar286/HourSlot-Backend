@@ -1,16 +1,23 @@
 package com.hourslot.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
-import java.time.LocalDateTime;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.type.SqlTypes;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.Map;
 
 @Entity
 @Table(name = "services")
+@SQLRestriction("deleted_at IS NULL")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -34,9 +41,12 @@ public class Service {
     private String description;
 
     @NotNull
-    @Min(0)
-    @Column(nullable = false)
-    private double price;
+    @Column(name = "base_price", nullable = false, precision = 12, scale = 2)
+    private BigDecimal basePrice;
+
+    @Column(nullable = false, length = 3)
+    @Builder.Default
+    private String currency = "USD";
 
     @NotNull
     @Min(1)
@@ -63,11 +73,43 @@ public class Service {
     @Builder.Default
     private boolean groupService = false;
 
+    @Column(name = "sort_order", nullable = false)
+    @Builder.Default
+    private int sortOrder = 0;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Object> metadata;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @JsonProperty("price")
+    public double getPrice() {
+        return basePrice == null ? 0.0 : basePrice.doubleValue();
+    }
+
+    public void setPrice(double price) {
+        this.basePrice = BigDecimal.valueOf(price);
+    }
 
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        if (this.currency == null) {
+            this.currency = "USD";
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }

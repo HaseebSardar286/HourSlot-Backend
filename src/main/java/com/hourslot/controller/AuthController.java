@@ -2,14 +2,18 @@ package com.hourslot.controller;
 
 import com.hourslot.dto.*;
 import com.hourslot.model.*;
+import com.hourslot.repository.AuthRefreshTokenRepository;
 import com.hourslot.repository.BusinessRepository;
 import com.hourslot.repository.CategoryRepository;
-import com.hourslot.repository.CustomerRepository;
+import com.hourslot.repository.CustomerProfileRepository;
 import com.hourslot.repository.PasswordResetTokenRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.service.MailService;
+import com.hourslot.service.RbacService;
+import com.hourslot.service.TenancyService;
 import com.hourslot.security.CustomUserDetails;
 import com.hourslot.security.JwtUtils;
+import com.hourslot.util.TokenHashes;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -48,7 +52,7 @@ public class AuthController {
     private UserRepository userRepository;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private CustomerProfileRepository customerProfileRepository;
 
     @Autowired
     private BusinessRepository businessRepository;
@@ -58,6 +62,15 @@ public class AuthController {
 
     @Autowired
     private PasswordResetTokenRepository passwordResetTokenRepository;
+
+    @Autowired
+    private AuthRefreshTokenRepository authRefreshTokenRepository;
+
+    @Autowired
+    private TenancyService tenancyService;
+
+    @Autowired
+    private RbacService rbacService;
 
     @Autowired
     private PasswordEncoder encoder;
@@ -103,6 +116,9 @@ public class AuthController {
 
         // Retrieve extra metadata from User entity for the response
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
+        persistRefreshToken(user, refreshToken);
 
         return ResponseEntity.ok(new LoginResponse(
                 jwt,
@@ -144,26 +160,22 @@ public class AuthController {
         // Create new user's account
         User user = User.builder()
                 .email(signUpRequest.getEmail())
-                .password(encoder.encode(signUpRequest.getPassword()))
-                .role(userRole)
+                .passwordHash(encoder.encode(signUpRequest.getPassword()))
                 .firstName(signUpRequest.getFirstName())
                 .lastName(signUpRequest.getLastName())
                 .phoneNumber(signUpRequest.getPhoneNumber())
+                .status("ACTIVE")
                 .build();
 
         User savedUser = userRepository.save(user);
 
-        // If registered user is a Customer, instantiate a Customer profile linked
-        // 1-to-1
         if (userRole == UserRole.CUSTOMER) {
-            Customer customer = Customer.builder()
+            customerProfileRepository.save(CustomerProfile.builder()
                     .user(savedUser)
-                    .build();
-            customerRepository.save(customer);
+                    .build());
+            rbacService.grantSystemRole(savedUser, "CUSTOMER", null, null, null, null);
         }
 
-        // If registered user is a Business Owner, auto-create a Business stub in
-        // PENDING state
         if (userRole == UserRole.BUSINESS_OWNER) {
             String businessName = signUpRequest.getBusinessName();
             if (businessName == null || businessName.isBlank()) {
@@ -185,9 +197,10 @@ public class AuthController {
                 }
             }
 
+            Organization organization = tenancyService.provisionOrganization(savedUser, businessName);
             Business business = Business.builder()
                     .name(businessName)
-                    .owner(savedUser)
+                    .organization(organization)
                     .description(signUpRequest.getBusinessDescription())
                     .primaryCategory(primaryCategory)
                     .status(BusinessStatus.PENDING)
@@ -211,6 +224,9 @@ public class AuthController {
 
             String token = jwtUtils.generateAccessToken(authentication);
             String newRefreshToken = jwtUtils.generateRefreshToken(authentication);
+            if (userDetails instanceof CustomUserDetails custom) {
+                userRepository.findById(custom.getId()).ifPresent(user -> persistRefreshToken(user, newRefreshToken));
+            }
 
             return ResponseEntity.ok(new TokenRefreshResponse(token, newRefreshToken));
         }
@@ -227,7 +243,7 @@ public class AuthController {
             passwordResetTokenRepository.deleteByUser(user);
             String token = UUID.randomUUID().toString();
             PasswordResetToken resetToken = PasswordResetToken.builder()
-                    .token(token)
+                    .tokenHash(TokenHashes.sha256(token))
                     .user(user)
                     .expiresAt(LocalDateTime.now().plusHours(1))
                     .used(false)
@@ -253,7 +269,7 @@ public class AuthController {
     @PostMapping("/reset-password")
     @Transactional
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(request.getToken())
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByTokenHash(TokenHashes.sha256(request.getToken()))
                 .orElse(null);
         if (resetToken == null || resetToken.isUsed() || resetToken.isExpired()) {
             return ResponseEntity.badRequest()
@@ -265,5 +281,13 @@ public class AuthController {
         resetToken.setUsed(true);
         passwordResetTokenRepository.save(resetToken);
         return ResponseEntity.ok(new MessageResponse("Password has been reset successfully."));
+    }
+
+    private void persistRefreshToken(User user, String refreshToken) {
+        authRefreshTokenRepository.save(AuthRefreshToken.builder()
+                .user(user)
+                .tokenHash(TokenHashes.sha256(refreshToken))
+                .expiresAt(LocalDateTime.now().plusDays(7))
+                .build());
     }
 }

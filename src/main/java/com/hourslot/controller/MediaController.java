@@ -6,6 +6,8 @@ import com.hourslot.model.User;
 import com.hourslot.repository.BusinessRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.security.CustomUserDetails;
+import com.hourslot.service.MediaAssetService;
+import com.hourslot.service.TenancyService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -18,19 +20,20 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/business/media")
 public class MediaController {
 
     @Autowired
-    private BusinessRepository businessRepository;
+    private UserRepository userRepository;
 
     @Autowired
-    private UserRepository userRepository;
+    private TenancyService tenancyService;
+
+    @Autowired
+    private MediaAssetService mediaAssetService;
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -50,7 +53,7 @@ public class MediaController {
         }
 
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
         Path dir = Paths.get(uploadDir).toAbsolutePath().normalize();
@@ -64,17 +67,11 @@ public class MediaController {
         Files.write(target, file.getBytes());
 
         String publicUrl = "/uploads/" + filename;
-        String existing = business.getGalleryUrls();
-        if (existing == null || existing.isBlank()) {
-            business.setGalleryUrls(publicUrl);
-        } else {
-            business.setGalleryUrls(existing + "," + publicUrl);
-        }
-        businessRepository.save(business);
+        String galleryUrls = mediaAssetService.appendGalleryUrl(business.getId(), publicUrl);
 
         return ResponseEntity.ok(java.util.Map.of(
                 "url", publicUrl,
-                "galleryUrls", business.getGalleryUrls()
+                "galleryUrls", galleryUrls
         ));
     }
 
@@ -84,18 +81,9 @@ public class MediaController {
             @RequestParam String url,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        Business business = businessRepository.findByOwner(user)
+        Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
-
-        if (business.getGalleryUrls() == null) {
-            return ResponseEntity.ok(new MessageResponse("Gallery already empty."));
-        }
-        String updated = Arrays.stream(business.getGalleryUrls().split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty() && !s.equals(url))
-                .collect(Collectors.joining(","));
-        business.setGalleryUrls(updated.isBlank() ? null : updated);
-        businessRepository.save(business);
+        mediaAssetService.removeGalleryUrl(business.getId(), url);
         return ResponseEntity.ok(new MessageResponse("Image removed from gallery."));
     }
 }

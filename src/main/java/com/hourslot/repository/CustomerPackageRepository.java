@@ -1,7 +1,7 @@
 package com.hourslot.repository;
 
-import com.hourslot.model.Customer;
 import com.hourslot.model.CustomerPackage;
+import com.hourslot.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,16 +15,16 @@ public interface CustomerPackageRepository extends JpaRepository<CustomerPackage
             LEFT JOIN FETCH cp.servicePackage sp
             LEFT JOIN FETCH sp.business
             LEFT JOIN FETCH sp.services
-            WHERE cp.customer = :customer
+            WHERE cp.customerUser = :customer
             ORDER BY cp.createdAt DESC
             """)
-    List<CustomerPackage> findByCustomerOrderByCreatedAtDesc(@Param("customer") Customer customer);
+    List<CustomerPackage> findByCustomerUserOrderByCreatedAtDesc(@Param("customer") User customer);
 
     @Query("""
             SELECT DISTINCT cp FROM CustomerPackage cp
             LEFT JOIN FETCH cp.servicePackage sp
             LEFT JOIN FETCH sp.services
-            WHERE cp.customer = :customer AND cp.status = :status
+            WHERE cp.customerUser = :customer AND cp.status = :status
             """)
-    List<CustomerPackage> findByCustomerAndStatus(@Param("customer") Customer customer, @Param("status") String status);
+    List<CustomerPackage> findByCustomerUserAndStatus(@Param("customer") User customer, @Param("status") String status);
 }

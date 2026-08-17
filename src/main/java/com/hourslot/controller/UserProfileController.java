@@ -4,6 +4,7 @@ import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.User;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.security.CustomUserDetails;
+import com.hourslot.service.RbacService;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +22,9 @@ public class UserProfileController {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private RbacService rbacService;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -44,7 +48,7 @@ public class UserProfileController {
         body.put("firstName", user.getFirstName());
         body.put("lastName", user.getLastName());
         body.put("phoneNumber", user.getPhoneNumber());
-        body.put("role", user.getRole().name());
+        body.put("role", rbacService.resolveAppRole(user.getId()).name());
         return ResponseEntity.ok(body);
     }
 

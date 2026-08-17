@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
@@ -12,6 +13,7 @@ import java.time.LocalDateTime;
 @Table(name = "branches", indexes = {
         @Index(name = "idx_branches_lat_lon", columnList = "latitude, longitude")
 })
+@SQLRestriction("deleted_at IS NULL")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -26,7 +28,7 @@ public class Branch {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "business_id", nullable = false)
     @JsonIgnoreProperties({
-            "owner", "secondaryCategories", "primaryCategory",
+            "organization", "secondaryCategories", "primaryCategory",
             "hibernateLazyInitializer", "handler"
     })
     private Business business;
@@ -39,12 +41,10 @@ public class Branch {
     @Column(nullable = false)
     private String address;
 
-    /** WGS84 latitude — plain column, fully app-controlled (no PostGIS). */
     @NotNull
     @Column(nullable = false)
     private Double latitude;
 
-    /** WGS84 longitude — plain column, fully app-controlled (no PostGIS). */
     @NotNull
     @Column(nullable = false)
     private Double longitude;
@@ -52,11 +52,33 @@ public class Branch {
     @Column(name = "phone_number")
     private String phoneNumber;
 
+    private String timezone;
+
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private boolean active = true;
+
+    @Column(name = "sort_order", nullable = false)
+    @Builder.Default
+    private int sortOrder = 0;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }

@@ -4,6 +4,10 @@ import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.*;
 import com.hourslot.repository.*;
 import com.hourslot.security.CustomUserDetails;
+import com.hourslot.service.MediaAssetService;
+import com.hourslot.service.RbacService;
+import com.hourslot.service.SystemSettingService;
+import com.hourslot.service.TenancyService;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -40,13 +44,22 @@ public class AdminController {
     private BookingRepository bookingRepository;
 
     @Autowired
-    private AuditLogRepository auditLogRepository;
+    private AuditEventRepository auditEventRepository;
 
     @Autowired
-    private SystemConfigRepository systemConfigRepository;
+    private SystemSettingService systemSettingService;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private CustomerProfileRepository customerProfileRepository;
+
+    @Autowired
+    private TenancyService tenancyService;
+
+    @Autowired
+    private RbacService rbacService;
+
+    @Autowired
+    private MediaAssetService mediaAssetService;
 
     @Autowired
     private BranchRepository branchRepository;
@@ -65,14 +78,7 @@ public class AdminController {
 
     @PostConstruct
     public void initDefaultConfig() {
-        if (systemConfigRepository.count() == 0) {
-            SystemConfig config = SystemConfig.builder()
-                    .defaultCommissionRate(10.0)
-                    .supportedCurrencies("USD,PKR,AED,EUR,GBP")
-                    .registrationOpen(true)
-                    .build();
-            systemConfigRepository.save(config);
-        }
+        // Settings are seeded by Flyway (system_settings).
     }
 
     // ==========================================
@@ -98,15 +104,8 @@ public class AdminController {
         long totalBookings = bookingRepository.count();
         long pendingVerifications = businessRepository.findByVerified(false).size();
 
-        // Calculate total commission earnings for COMPLETED & CONFIRMED bookings
-        double totalCommission = bookingRepository.findAll().stream()
-                .filter(b -> b.getStatus() == BookingStatus.COMPLETED || b.getStatus() == BookingStatus.CONFIRMED)
-                .mapToDouble(b -> {
-                    Business biz = b.getBranch().getBusiness();
-                    double rate = biz.getCommissionRate() > 0 ? biz.getCommissionRate() : 10.0;
-                    return b.getPrice() * (rate / 100.0);
-                })
-                .sum();
+        // Platform never takes a booking cut — businesses keep 100% of visit revenue.
+        double totalCommission = 0.0;
 
         PlatformStats stats = PlatformStats.builder()
                 .totalUsers(totalUsers)
@@ -137,6 +136,8 @@ public class AdminController {
                 .sorted(Comparator.comparing(Business::getCreatedAt).reversed())
                 .limit(10)
                 .collect(Collectors.toList());
+        rbacService.attachAppRoles(users);
+        tenancyService.attachOwners(businesses);
 
         RecentRegistrationsResponse response = RecentRegistrationsResponse.builder()
                 .users(users)
@@ -177,12 +178,7 @@ public class AdminController {
 
             long count = monthBookings.size();
             double totalRev = monthBookings.stream().mapToDouble(Booking::getPrice).sum();
-            double totalComm = monthBookings.stream().mapToDouble(b -> {
-                double rate = b.getBranch().getBusiness().getCommissionRate() > 0 
-                        ? b.getBranch().getBusiness().getCommissionRate() 
-                        : 10.0;
-                return b.getPrice() * (rate / 100.0);
-            }).sum();
+            double totalComm = 0.0;
 
             // Seed mock metrics if data is sparse to make UI charts look rich immediately
             if (count == 0) {
@@ -216,6 +212,7 @@ public class AdminController {
         List<User> users = userRepository.findAll().stream()
                 .sorted(Comparator.comparing(User::getCreatedAt).reversed())
                 .collect(Collectors.toList());
+        rbacService.attachAppRoles(users);
 
         if (role != null && !role.isBlank()) {
             users = users.stream()
@@ -239,6 +236,7 @@ public class AdminController {
     public ResponseEntity<User> getUserById(@PathVariable Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+        rbacService.attachAppRoles(List.of(user));
         return ResponseEntity.ok(user);
     }
 
@@ -269,7 +267,7 @@ public class AdminController {
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
 
         // Delete customer profile if exists
-        customerRepository.findById(id).ifPresent(customerRepository::delete);
+        customerProfileRepository.findById(id).ifPresent(customerProfileRepository::delete);
         
         userRepository.delete(user);
 
@@ -302,11 +300,11 @@ public class AdminController {
             String query = search.toLowerCase();
             businesses = businesses.stream()
                     .filter(b -> b.getName().toLowerCase().contains(query) ||
-                            (b.getDescription() != null && b.getDescription().toLowerCase().contains(query)) ||
-                            b.getOwner().getEmail().toLowerCase().contains(query))
+                            (b.getDescription() != null && b.getDescription().toLowerCase().contains(query)))
                     .collect(Collectors.toList());
         }
 
+        tenancyService.attachOwners(businesses);
         return ResponseEntity.ok(businesses);
     }
 
@@ -339,6 +337,7 @@ public class AdminController {
             }
         }
 
+        tenancyService.attachOwner(business);
         BusinessDetailResponse response = BusinessDetailResponse.builder()
                 .business(business)
                 .branches(branches)
@@ -419,13 +418,11 @@ public class AdminController {
         Business business = businessRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Business not found with id: " + id));
 
-        business.setCommissionRate(rate);
-        businessRepository.save(business);
-
-        logAction(adminDetails.getId(), "UPDATE_BUSINESS_COMMISSION", "Business", business.getId(), 
-                "Updated commission rate for " + business.getName() + " to " + rate + "%", request.getRemoteAddr());
-
-        return ResponseEntity.ok(new MessageResponse("Commission rate updated to " + rate + "%"));
+        logAction(adminDetails.getId(), "UPDATE_COMMISSION", "Business", business.getId(),
+                "Commission is unused (requested " + rate + "%). HourSlot does not take a booking cut.",
+                request.getRemoteAddr());
+        return ResponseEntity.ok(new MessageResponse(
+                "Commission is unused. HourSlot does not take a cut of bookings."));
     }
 
     // ==========================================
@@ -433,38 +430,24 @@ public class AdminController {
     // ==========================================
 
     @GetMapping("/settings")
-    public ResponseEntity<SystemConfig> getSettings() {
-        SystemConfig config = systemConfigRepository.findAll().stream()
-                .findFirst()
-                .orElseGet(() -> {
-                    SystemConfig fresh = SystemConfig.builder()
-                            .defaultCommissionRate(10.0)
-                            .supportedCurrencies("USD,PKR,AED")
-                            .registrationOpen(true)
-                            .build();
-                    return systemConfigRepository.save(fresh);
-                });
-        return ResponseEntity.ok(config);
+    public ResponseEntity<Map<String, Object>> getSettings() {
+        return ResponseEntity.ok(systemSettingService.asAdminSettings());
     }
 
     @PutMapping("/settings")
-    public ResponseEntity<SystemConfig> updateSettings(
-            @Valid @RequestBody SystemConfig settingsUpdate,
+    public ResponseEntity<Map<String, Object>> updateSettings(
+            @RequestBody Map<String, Object> settingsUpdate,
             @AuthenticationPrincipal CustomUserDetails adminDetails,
             HttpServletRequest request) {
-        SystemConfig config = systemConfigRepository.findAll().stream()
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("System config not initialized."));
+        boolean registrationOpen = Boolean.parseBoolean(String.valueOf(settingsUpdate.getOrDefault("registrationOpen", true)));
+        String currencies = String.valueOf(settingsUpdate.getOrDefault("supportedCurrencies", "USD,PKR,AED,EUR,GBP"));
+        User admin = userRepository.findById(adminDetails.getId()).orElse(null);
+        Map<String, Object> updated = systemSettingService.updateAdminSettings(registrationOpen, currencies, admin);
 
-        config.setDefaultCommissionRate(settingsUpdate.getDefaultCommissionRate());
-        config.setSupportedCurrencies(settingsUpdate.getSupportedCurrencies());
-        config.setRegistrationOpen(settingsUpdate.isRegistrationOpen());
-        systemConfigRepository.save(config);
+        logAction(adminDetails.getId(), "UPDATE_SYSTEM_SETTINGS", "SystemSetting", 0L,
+                "Updated platform settings", request.getRemoteAddr());
 
-        logAction(adminDetails.getId(), "UPDATE_SYSTEM_SETTINGS", "SystemConfig", config.getId(),
-                "Updated platform settings. Comm Rate: " + config.getDefaultCommissionRate() + "%", request.getRemoteAddr());
-
-        return ResponseEntity.ok(config);
+        return ResponseEntity.ok(updated);
     }
 
     // ==========================================
@@ -472,8 +455,8 @@ public class AdminController {
     // ==========================================
 
     @GetMapping("/audit-logs")
-    public ResponseEntity<List<AuditLog>> getAuditLogs() {
-        return ResponseEntity.ok(auditLogRepository.findAllByOrderByTimestampDesc());
+    public ResponseEntity<List<AuditEvent>> getAuditLogs() {
+        return ResponseEntity.ok(auditEventRepository.findAllByOrderByCreatedAtDesc());
     }
 
     // ==========================================
@@ -501,78 +484,73 @@ public class AdminController {
         // Owner 1
         User ownerUser = User.builder()
                 .email("zenithowner@hourslot.com")
-                .password(encoder.encode("password123"))
-                .role(UserRole.BUSINESS_OWNER)
+                .passwordHash(encoder.encode("password123"))
                 .firstName("Robert")
                 .lastName("Kowalski")
                 .phoneNumber("+15551212")
-                .active(true)
+                .status("ACTIVE")
                 .build();
         userRepository.save(ownerUser);
 
         // Owner 2
         User ownerUser2 = User.builder()
                 .email("elitedental@hourslot.com")
-                .password(encoder.encode("password123"))
-                .role(UserRole.BUSINESS_OWNER)
+                .passwordHash(encoder.encode("password123"))
                 .firstName("Dr. Fatima")
                 .lastName("Zahra")
                 .phoneNumber("+15551313")
-                .active(true)
+                .status("ACTIVE")
                 .build();
         userRepository.save(ownerUser2);
 
         // Staff 1
         User staffUser = User.builder()
                 .email("johndoe@hourslot.com")
-                .password(encoder.encode("password123"))
-                .role(UserRole.BUSINESS_STAFF)
+                .passwordHash(encoder.encode("password123"))
                 .firstName("John")
                 .lastName("Doe")
                 .phoneNumber("+15551414")
-                .active(true)
+                .status("ACTIVE")
                 .build();
         userRepository.save(staffUser);
 
         // Customer 1
         User custUser = User.builder()
                 .email("alice@hourslot.com")
-                .password(encoder.encode("password123"))
-                .role(UserRole.CUSTOMER)
+                .passwordHash(encoder.encode("password123"))
                 .firstName("Alice")
                 .lastName("Green")
                 .phoneNumber("+15550101")
-                .active(true)
+                .status("ACTIVE")
                 .build();
         userRepository.save(custUser);
         
-        Customer customer = Customer.builder()
+        customerProfileRepository.save(CustomerProfile.builder()
                 .user(custUser)
-                .address("101 Emerald St")
+                .addressLine1("101 Emerald St")
                 .gender("Female")
                 .dateOfBirth(LocalDate.of(1995, 8, 15))
-                .build();
-        customerRepository.save(customer);
+                .build());
+        rbacService.grantSystemRole(custUser, "CUSTOMER", null, null, null, null);
 
         // Customer 2
         User custUser2 = User.builder()
                 .email("bob@hourslot.com")
-                .password(encoder.encode("password123"))
-                .role(UserRole.CUSTOMER)
+                .passwordHash(encoder.encode("password123"))
                 .firstName("Bob")
                 .lastName("Miller")
                 .phoneNumber("+15550102")
-                .active(true)
+                .status("ACTIVE")
                 .build();
         userRepository.save(custUser2);
 
-        Customer customer2 = Customer.builder()
+        customerProfileRepository.save(CustomerProfile.builder()
                 .user(custUser2)
-                .address("202 Sapphire Rd")
+                .addressLine1("202 Sapphire Rd")
                 .gender("Male")
                 .dateOfBirth(LocalDate.of(1990, 4, 20))
-                .build();
-        customerRepository.save(customer2);
+                .build());
+        rbacService.grantSystemRole(custUser2, "CUSTOMER", null, null, null, null);
 
         // Seed Categories
         Category salonCat = Category.builder()
@@ -591,32 +569,34 @@ public class AdminController {
 
         // 2. Seed Mock Businesses
         // Business 1 (Approved)
+        Organization org1 = tenancyService.provisionOrganization(ownerUser, "Zenith Hair Salon");
+        Organization org2 = tenancyService.provisionOrganization(ownerUser2, "Elite Dental Care");
+
         Business business1 = Business.builder()
                 .name("Zenith Hair Salon")
-                .owner(ownerUser)
+                .organization(org1)
                 .description("Luxury haircut, colors, and styling services in downtown.")
                 .primaryCategory(salonCat)
                 .status(BusinessStatus.APPROVED)
                 .verified(true)
-                .commissionRate(12.0)
-                .rating(4.8)
-                .logoUrl("https://images.unsplash.com/photo-1560066984-138dadb4c035?w=120")
+                .ratingAvg(java.math.BigDecimal.valueOf(4.8))
                 .build();
-        businessRepository.save(business1);
+        business1 = businessRepository.save(business1);
+        business1.setVerified(true);
+        business1.setStatus(BusinessStatus.APPROVED);
+        business1 = businessRepository.save(business1);
+        mediaAssetService.replaceLogo(business1.getId(), "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=120");
 
-        // Business 2 (Pending Review)
         Business business2 = Business.builder()
                 .name("Elite Dental Care")
-                .owner(ownerUser2)
+                .organization(org2)
                 .description("Advanced dental clinic specializing in implants and cosmetic smile alignment.")
                 .primaryCategory(healthCat)
                 .status(BusinessStatus.PENDING)
                 .verified(false)
-                .commissionRate(10.0)
-                .rating(0.0)
-                .logoUrl("https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=120")
                 .build();
-        businessRepository.save(business2);
+        business2 = businessRepository.save(business2);
+        mediaAssetService.replaceLogo(business2.getId(), "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=120");
 
         // 3. Seed Branches
         Branch branch1 = Branch.builder()
@@ -643,7 +623,8 @@ public class AdminController {
         Service service1 = Service.builder()
                 .name("Classic Haircut & Styling")
                 .description("Includes hairwash, styling, and premium massage.")
-                .price(45.0)
+                .basePrice(java.math.BigDecimal.valueOf(45.0))
+                .business(business1)
                 .durationMinutes(45)
                 .build();
         serviceRepository.save(service1);
@@ -651,7 +632,8 @@ public class AdminController {
         Service service2 = Service.builder()
                 .name("Full Hair Coloring")
                 .description("Professional highlights and base color treatment.")
-                .price(120.0)
+                .basePrice(java.math.BigDecimal.valueOf(120.0))
+                .business(business1)
                 .durationMinutes(90)
                 .build();
         serviceRepository.save(service2);
@@ -659,7 +641,8 @@ public class AdminController {
         Service service3 = Service.builder()
                 .name("Teeth Whitening")
                 .description("Laser cleaning and whitening treatment.")
-                .price(180.0)
+                .basePrice(java.math.BigDecimal.valueOf(180.0))
+                .business(business2)
                 .durationMinutes(60)
                 .build();
         serviceRepository.save(service3);
@@ -668,76 +651,24 @@ public class AdminController {
         Staff staff1 = Staff.builder()
                 .branch(branch1)
                 .user(staffUser)
-                .name("John Doe")
+                .displayName("John Doe")
                 .designation("Master Barber")
-                .rating(4.9)
+                .ratingAvg(java.math.BigDecimal.valueOf(4.9))
                 .build();
         staffRepository.save(staff1);
+        rbacService.grantSystemRole(staffUser, "STAFF", org1, business1, branch1, staff1);
 
         Staff staff2 = Staff.builder()
                 .branch(branch1)
-                .name("Sarah Jenkins")
+                .displayName("Sarah Jenkins")
                 .designation("Senior Colorist")
-                .rating(4.7)
+                .ratingAvg(java.math.BigDecimal.valueOf(4.7))
                 .build();
         staffRepository.save(staff2);
 
-        // 6. Seed Mock Bookings
-        // Booking 1 (Completed, 3 months ago)
-        Booking booking1 = Booking.builder()
-                .customer(customer)
-                .branch(branch1)
-                .service(service1)
-                .staff(staff1)
-                .bookingTime(LocalDateTime.now().minusMonths(3).withHour(10).withMinute(0))
-                .endTime(LocalDateTime.now().minusMonths(3).withHour(10).withMinute(45))
-                .status(BookingStatus.COMPLETED)
-                .price(45.0)
-                .paymentStatus("PAID")
-                .build();
-        bookingRepository.save(booking1);
-
-        // Booking 2 (Completed, 2 months ago)
-        Booking booking2 = Booking.builder()
-                .customer(customer2)
-                .branch(branch1)
-                .service(service2)
-                .staff(staff2)
-                .bookingTime(LocalDateTime.now().minusMonths(2).withHour(14).withMinute(0))
-                .endTime(LocalDateTime.now().minusMonths(2).withHour(15).withMinute(30))
-                .status(BookingStatus.COMPLETED)
-                .price(120.0)
-                .paymentStatus("PAID")
-                .build();
-        bookingRepository.save(booking2);
-
-        // Booking 3 (Confirmed, upcoming)
-        Booking booking3 = Booking.builder()
-                .customer(customer)
-                .branch(branch1)
-                .service(service1)
-                .staff(staff1)
-                .bookingTime(LocalDateTime.now().plusDays(2).withHour(11).withMinute(0))
-                .endTime(LocalDateTime.now().plusDays(2).withHour(11).withMinute(45))
-                .status(BookingStatus.CONFIRMED)
-                .price(45.0)
-                .paymentStatus("PAID")
-                .build();
-        bookingRepository.save(booking3);
-
-        // Booking 4 (Cancelled)
-        Booking booking4 = Booking.builder()
-                .customer(customer2)
-                .branch(branch1)
-                .service(service1)
-                .staff(staff2)
-                .bookingTime(LocalDateTime.now().minusDays(5).withHour(16).withMinute(0))
-                .endTime(LocalDateTime.now().minusDays(5).withHour(16).withMinute(45))
-                .status(BookingStatus.CANCELLED)
-                .price(45.0)
-                .paymentStatus("REFUNDED")
-                .build();
-        bookingRepository.save(booking4);
+        seedBooking(custUser, business1, branch1, service1, staff1, LocalDateTime.now().minusMonths(3).withHour(10).withMinute(0), 45, BookingStatus.COMPLETED, 45.0);
+        seedBooking(custUser2, business1, branch1, service2, staff2, LocalDateTime.now().minusMonths(2).withHour(14).withMinute(0), 90, BookingStatus.COMPLETED, 120.0);
+        seedBooking(custUser, business1, branch1, service1, staff1, LocalDateTime.now().plusDays(2).withHour(11).withMinute(0), 45, BookingStatus.CONFIRMED, 45.0);
 
         // 7. Write seed audit logs
         logAction(adminDetails.getId(), "SEED_DATABASE", "System", 0L, 
@@ -754,22 +685,47 @@ public class AdminController {
 
     private void logAction(Long adminId, String action, String entity, Long entityId, String details, String ipAddress) {
         User admin = userRepository.findById(adminId).orElse(null);
-        AuditLog log = AuditLog.builder()
-                .user(admin)
-                .action(action)
-                .entity(entity)
+        AuditEvent log = AuditEvent.builder()
+                .actor(admin)
+                .action(action + " - " + details)
+                .entityType(entity)
                 .entityId(entityId)
                 .ipAddress(ipAddress)
                 .build();
-        // prePersist handles timestamp, but we can set details or log description in details field
-        // Since AuditLog model doesn't have a specific "details" or "description" field in the code we viewed, 
-        // let's check its fields again: id, user, action, entity, entityId, timestamp, ipAddress.
-        // Let's store details by prepending/appending to action if no details field is present!
-        // Wait, does it have details?
-        // AuditLog.java fields: id, user, action, entity, entityId, timestamp, ipAddress. 
-        // No details field is in the model, so we store the action description directly in the 'action' field, e.g. "VERIFY_BUSINESS: Approved Zenith Hair Salon".
-        // Let's modify the action string to be: action + " - " + details.
-        log.setAction(action + " - " + details);
-        auditLogRepository.save(log);
+        auditEventRepository.save(log);
+    }
+
+    private void seedBooking(User customer, Business business, Branch branch, Service service, Staff staff,
+                             LocalDateTime start, int durationMinutes, BookingStatus status, double price) {
+        Booking booking = Booking.builder()
+                .customerUser(customer)
+                .organization(business.getOrganization())
+                .business(business)
+                .branch(branch)
+                .bookingTime(start)
+                .endTime(start.plusMinutes(durationMinutes))
+                .status(status)
+                .totalPrice(java.math.BigDecimal.valueOf(price))
+                .currency("USD")
+                .paymentStatus("PAID")
+                .paymentMethod("VENUE")
+                .source("MARKETPLACE")
+                .items(new java.util.ArrayList<>())
+                .build();
+        BookingItem item = BookingItem.builder()
+                .booking(booking)
+                .service(service)
+                .staff(staff)
+                .startTime(start)
+                .endTime(start.plusMinutes(durationMinutes))
+                .unitPrice(java.math.BigDecimal.valueOf(price))
+                .priceMultiplier(java.math.BigDecimal.ONE)
+                .lineTotal(java.math.BigDecimal.valueOf(price))
+                .sortOrder(0)
+                .build();
+        booking.getItems().add(item);
+        Booking saved = bookingRepository.save(booking);
+        saved.setPublicCode("HS" + String.format("%08d", saved.getId()));
+        bookingRepository.save(saved);
     }
 }

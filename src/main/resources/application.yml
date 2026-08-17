@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8090
 
 spring:
   application:
@@ -15,16 +15,17 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: ${JPA_DDL_AUTO:update}
-    open-in-view: false
+      ddl-auto: none
+    open-in-view: true
     show-sql: false
     properties:
       hibernate:
         format_sql: true
 
   flyway:
-    enabled: ${FLYWAY_ENABLED:false}
+    enabled: true
     baseline-on-migrate: true
+    baseline-version: 1
 
   servlet:
     multipart:
@@ -61,7 +62,7 @@ app:
   stripe:
     secret-key: ${STRIPE_SECRET_KEY:}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
-    commission-percentage: 10.0
+    commission-percentage: 0.0
 
 logging:
   config: classpath:log4j2-spring.xml
@@ -77,9 +78,9 @@ spring:
     password: ${DATABASE_PASSWORD:npg_TKPjdIqb34rC}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
   flyway:
-    enabled: false
+    enabled: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}
