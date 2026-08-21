@@ -28,6 +28,7 @@ public class TenancyService {
     private final StaffRepository staffRepository;
     private final MemberRoleRepository memberRoleRepository;
     private final RbacService rbacService;
+    private final EntitlementService entitlementService;
 
     public TenancyService(
             OrganizationRepository organizationRepository,
@@ -35,13 +36,15 @@ public class TenancyService {
             BusinessRepository businessRepository,
             StaffRepository staffRepository,
             MemberRoleRepository memberRoleRepository,
-            RbacService rbacService) {
+            RbacService rbacService,
+            EntitlementService entitlementService) {
         this.organizationRepository = organizationRepository;
         this.organizationMemberRepository = organizationMemberRepository;
         this.businessRepository = businessRepository;
         this.staffRepository = staffRepository;
         this.memberRoleRepository = memberRoleRepository;
         this.rbacService = rbacService;
+        this.entitlementService = entitlementService;
     }
 
     @Transactional
@@ -63,7 +66,23 @@ public class TenancyService {
                 .build();
         organizationMemberRepository.save(member);
         rbacService.grantSystemRole(owner, "ORG_OWNER", organization, null, null, null);
+        entitlementService.ensureStarter(organization);
         return organization;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Organization> findOrganizationForUser(User user) {
+        List<OrganizationMember> members = organizationMemberRepository.findActiveWithOrgByUserId(user.getId());
+        if (!members.isEmpty()) {
+            return Optional.of(members.get(0).getOrganization());
+        }
+        return findBusinessForUser(user).map(Business::getOrganization);
+    }
+
+    @Transactional(readOnly = true)
+    public Organization requireOrganizationForUser(User user) {
+        return findOrganizationForUser(user)
+                .orElseThrow(() -> new RuntimeException("Organization not found."));
     }
 
     @Transactional(readOnly = true)

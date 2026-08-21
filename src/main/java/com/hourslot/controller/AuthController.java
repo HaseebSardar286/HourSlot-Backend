@@ -10,6 +10,7 @@ import com.hourslot.repository.PasswordResetTokenRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.service.MailService;
 import com.hourslot.service.RbacService;
+import com.hourslot.service.StaffInviteService;
 import com.hourslot.service.TenancyService;
 import com.hourslot.security.CustomUserDetails;
 import com.hourslot.security.JwtUtils;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -71,6 +73,9 @@ public class AuthController {
 
     @Autowired
     private RbacService rbacService;
+
+    @Autowired
+    private StaffInviteService staffInviteService;
 
     @Autowired
     private PasswordEncoder encoder;
@@ -202,6 +207,7 @@ public class AuthController {
                     .name(businessName)
                     .organization(organization)
                     .description(signUpRequest.getBusinessDescription())
+                    .registrationNumber(signUpRequest.getRegistrationNumber())
                     .primaryCategory(primaryCategory)
                     .status(BusinessStatus.PENDING)
                     .build();
@@ -209,6 +215,38 @@ public class AuthController {
         }
 
         return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+    }
+
+    @GetMapping("/staff-invite")
+    public ResponseEntity<?> previewStaffInvite(@RequestParam String token) {
+        return ResponseEntity.ok(staffInviteService.preview(token));
+    }
+
+    @Data
+    public static class AcceptStaffInviteRequest {
+        @NotBlank
+        private String token;
+        private String firstName;
+        private String lastName;
+        @NotBlank
+        @Size(min = 6, max = 40)
+        private String password;
+        private String phoneNumber;
+    }
+
+    @PostMapping("/staff-invite/accept")
+    public ResponseEntity<?> acceptStaffInvite(@Valid @RequestBody AcceptStaffInviteRequest request) {
+        Staff staff = staffInviteService.accept(
+                request.getToken(),
+                request.getFirstName(),
+                request.getLastName(),
+                request.getPassword(),
+                request.getPhoneNumber());
+        return ResponseEntity.ok(Map.of(
+                "message", "Invite accepted. You can sign in with your email.",
+                "staffId", staff.getId(),
+                "email", staff.getUser() != null ? staff.getUser().getEmail() : null
+        ));
     }
 
     @PostMapping("/refresh")

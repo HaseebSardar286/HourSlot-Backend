@@ -13,6 +13,9 @@ import java.util.List;
 public interface BranchRepository extends JpaRepository<Branch, Long> {
     List<Branch> findByBusiness(Business business);
 
+    @Query("SELECT COUNT(b) FROM Branch b WHERE b.business.organization.id = :orgId")
+    long countByOrganizationId(@Param("orgId") Long orgId);
+
     @Query("""
             SELECT DISTINCT b FROM Branch b
             JOIN FETCH b.business biz

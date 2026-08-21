@@ -8,6 +8,7 @@ import com.hourslot.service.MediaAssetService;
 import com.hourslot.service.RbacService;
 import com.hourslot.service.SystemSettingService;
 import com.hourslot.service.TenancyService;
+import com.hourslot.service.VerificationDocumentService;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -60,6 +61,12 @@ public class AdminController {
 
     @Autowired
     private MediaAssetService mediaAssetService;
+
+    @Autowired
+    private VerificationDocumentService verificationDocumentService;
+
+    @Autowired
+    private BusinessVerificationDocumentRepository businessVerificationDocumentRepository;
 
     @Autowired
     private BranchRepository branchRepository;
@@ -317,6 +324,8 @@ public class AdminController {
         private List<Branch> branches;
         private List<Service> services;
         private List<Staff> staff;
+        private List<Map<String, Object>> verificationDocuments;
+        private Map<String, Object> verificationReadiness;
     }
 
     @GetMapping("/businesses/{id}")
@@ -338,14 +347,46 @@ public class AdminController {
         }
 
         tenancyService.attachOwner(business);
+        List<Map<String, Object>> docs = verificationDocumentService.list(business).stream()
+                .map(doc -> {
+                    Map<String, Object> view = new LinkedHashMap<>();
+                    view.put("id", doc.getId());
+                    view.put("documentType", doc.getDocumentType());
+                    view.put("label", VerificationDocumentService.labelFor(doc.getDocumentType()));
+                    view.put("status", doc.getStatus());
+                    view.put("originalFilename", doc.getOriginalFilename());
+                    view.put("url", doc.getMediaAsset() != null ? doc.getMediaAsset().getUrl() : null);
+                    view.put("reviewNotes", doc.getReviewNotes());
+                    view.put("reviewedAt", doc.getReviewedAt());
+                    view.put("createdAt", doc.getCreatedAt());
+                    return view;
+                })
+                .toList();
         BusinessDetailResponse response = BusinessDetailResponse.builder()
                 .business(business)
                 .branches(branches)
                 .services(services)
                 .staff(staff)
+                .verificationDocuments(docs)
+                .verificationReadiness(verificationDocumentService.readiness(business))
                 .build();
         
         return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/businesses/{id}/approve")
+    public ResponseEntity<?> approveBusinessListing(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails adminDetails,
+            HttpServletRequest request) {
+        Business business = businessRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Business not found with id: " + id));
+        business.setStatus(BusinessStatus.APPROVED);
+        business.setRejectionReason(null);
+        businessRepository.save(business);
+        logAction(adminDetails.getId(), "APPROVE_BUSINESS", "Business", business.getId(),
+                "Approved listing: " + business.getName(), request.getRemoteAddr());
+        return ResponseEntity.ok(new MessageResponse("Business " + business.getName() + " listing approved."));
     }
 
     @PutMapping("/businesses/{id}/verify")
@@ -356,14 +397,51 @@ public class AdminController {
         Business business = businessRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Business not found with id: " + id));
 
+        verificationDocumentService.requireReadyForVerifiedBadge(business);
+
         business.setVerified(true);
         business.setStatus(BusinessStatus.APPROVED);
+        business.setRejectionReason(null);
         businessRepository.save(business);
 
         logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", business.getId(), 
-                "Approved business: " + business.getName(), request.getRemoteAddr());
+                "Verified badge granted: " + business.getName(), request.getRemoteAddr());
 
-        return ResponseEntity.ok(new MessageResponse("Business " + business.getName() + " verified successfully!"));
+        return ResponseEntity.ok(new MessageResponse("Verified badge granted for " + business.getName() + "."));
+    }
+
+    @Data
+    public static class DocumentReviewRequest {
+        private boolean approve;
+        private String notes;
+    }
+
+    @PutMapping("/businesses/{businessId}/verification-documents/{documentId}/review")
+    public ResponseEntity<?> reviewVerificationDocument(
+            @PathVariable Long businessId,
+            @PathVariable Long documentId,
+            @RequestBody DocumentReviewRequest body,
+            @AuthenticationPrincipal CustomUserDetails adminDetails,
+            HttpServletRequest request) {
+        Business business = businessRepository.findById(businessId)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+        BusinessVerificationDocument document = businessVerificationDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new RuntimeException("Document not found."));
+        if (!document.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Document does not belong to this business."));
+        }
+        User admin = userRepository.findById(adminDetails.getId()).orElseThrow();
+        boolean approve = body != null && body.isApprove();
+        String notes = body != null ? body.getNotes() : null;
+        verificationDocumentService.review(document, admin, approve, notes);
+        logAction(adminDetails.getId(), approve ? "APPROVE_KYC_DOC" : "REJECT_KYC_DOC",
+                "BusinessVerificationDocument", document.getId(),
+                document.getDocumentType() + " for business " + business.getId(),
+                request.getRemoteAddr());
+        return ResponseEntity.ok(Map.of(
+                "message", approve ? "Document approved." : "Document rejected.",
+                "readiness", verificationDocumentService.readiness(business)
+        ));
     }
 
     @Data

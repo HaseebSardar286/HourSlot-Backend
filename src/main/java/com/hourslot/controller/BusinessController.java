@@ -4,8 +4,10 @@ import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.*;
 import com.hourslot.repository.*;
 import com.hourslot.security.CustomUserDetails;
+import com.hourslot.service.EntitlementService;
 import com.hourslot.service.MediaAssetService;
 import com.hourslot.service.ScheduleService;
+import com.hourslot.service.StaffInviteService;
 import com.hourslot.service.TenancyService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +18,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/business")
@@ -76,6 +80,18 @@ public class BusinessController {
     @Autowired
     private TimeOfDayPricingRepository timeOfDayPricingRepository;
 
+    @Autowired
+    private EntitlementService entitlementService;
+
+    @Autowired
+    private SubscriptionPlanRepository subscriptionPlanRepository;
+
+    @Autowired
+    private PlanEntitlementRepository planEntitlementRepository;
+
+    @Autowired
+    private StaffInviteService staffInviteService;
+
 
     @Data
     public static class BusinessRegistrationRequest {
@@ -83,6 +99,13 @@ public class BusinessController {
         private String name;
         private String description;
         private String logoUrl;
+        private Long primaryCategoryId;
+        private String registrationNumber;
+        private String phoneNumber;
+        private String address;
+        private Double latitude;
+        private Double longitude;
+        private String branchName;
     }
 
     @Data
@@ -117,6 +140,19 @@ public class BusinessController {
         @NotNull
         private Long branchId;
         private Long userId; // optional linked user login account
+        private String specialty;
+        private String bio;
+    }
+
+    @Data
+    public static class StaffInviteRequest {
+        @NotBlank
+        private String email;
+        @NotBlank
+        private String displayName;
+        private String designation;
+        @NotNull
+        private Long branchId;
     }
 
     @PostMapping("/register")
@@ -134,17 +170,40 @@ public class BusinessController {
         }
 
         Organization organization = tenancyService.provisionOrganization(owner, request.getName());
+        Category primaryCategory = null;
+        if (request.getPrimaryCategoryId() != null) {
+            primaryCategory = categoryRepository.findById(request.getPrimaryCategoryId()).orElse(null);
+        }
         Business business = Business.builder()
                 .name(request.getName())
                 .description(request.getDescription())
                 .organization(organization)
+                .registrationNumber(request.getRegistrationNumber())
+                .primaryCategory(primaryCategory)
+                .status(BusinessStatus.PENDING)
                 .build();
         business = businessRepository.save(business);
         if (request.getLogoUrl() != null && !request.getLogoUrl().isBlank()) {
             mediaAssetService.replaceLogo(business.getId(), request.getLogoUrl());
         }
 
-        return ResponseEntity.ok(new MessageResponse("Business registration request submitted successfully! Pending admin verification."));
+        if (request.getAddress() != null && !request.getAddress().isBlank()
+                && request.getLatitude() != null && request.getLongitude() != null) {
+            Branch branch = Branch.builder()
+                    .business(business)
+                    .name(request.getBranchName() != null && !request.getBranchName().isBlank()
+                            ? request.getBranchName()
+                            : "Main location")
+                    .address(request.getAddress())
+                    .latitude(request.getLatitude())
+                    .longitude(request.getLongitude())
+                    .phoneNumber(request.getPhoneNumber())
+                    .build();
+            branchRepository.save(branch);
+        }
+
+        return ResponseEntity.ok(new MessageResponse(
+                "Business registration submitted. Complete verification documents so Super Admin can grant a verified badge."));
     }
 
     @GetMapping("/profile")
@@ -154,6 +213,57 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
         return ResponseEntity.ok(business);
+    }
+
+    @GetMapping("/plan")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<EntitlementService.OwnerPlanSnapshot> getPlan(
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Organization organization = tenancyService.requireOrganizationForUser(user);
+        return ResponseEntity.ok(entitlementService.snapshot(organization));
+    }
+
+    @GetMapping("/plans")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<?> listPlans(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Organization organization = tenancyService.requireOrganizationForUser(user);
+        EntitlementService.OwnerPlanSnapshot current = entitlementService.snapshot(organization);
+        List<Map<String, Object>> plans = subscriptionPlanRepository.findByActiveTrueOrderBySortOrderAsc().stream()
+                .map(plan -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("code", plan.getCode());
+                    row.put("name", plan.getName());
+                    row.put("price", plan.getPrice());
+                    row.put("currency", plan.getCurrency());
+                    row.put("billingInterval", plan.getBillingInterval());
+                    row.put("sortOrder", plan.getSortOrder());
+                    row.put("features", plan.getFeatures());
+                    Map<String, Object> entitlements = new LinkedHashMap<>();
+                    for (PlanEntitlement pe : planEntitlementRepository.findByPlan(plan)) {
+                        Object value = pe.getValue();
+                        if ("BOOL".equalsIgnoreCase(pe.getValueType()) || "BOOLEAN".equalsIgnoreCase(pe.getValueType())) {
+                            value = Boolean.parseBoolean(pe.getValue());
+                        } else if ("INT".equalsIgnoreCase(pe.getValueType()) || "INTEGER".equalsIgnoreCase(pe.getValueType())) {
+                            try {
+                                value = Integer.parseInt(pe.getValue().trim());
+                            } catch (NumberFormatException ignored) {
+                                value = 0;
+                            }
+                        }
+                        entitlements.put(pe.getEntitlementCode(), value);
+                    }
+                    row.put("entitlements", entitlements);
+                    row.put("current", plan.getCode().equals(current.getPlanCode()));
+                    return row;
+                })
+                .toList();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("current", current);
+        body.put("plans", plans);
+        body.put("billingNote", "Stripe Billing checkout ships next. Your org stays on the current plan until then.");
+        return ResponseEntity.ok(body);
     }
 
     // ==========================================================================
@@ -169,6 +279,12 @@ public class BusinessController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
+        Organization organization = organizationOf(business);
+        entitlementService.requireHeadroom(
+                organization,
+                EntitlementService.MAX_BRANCHES,
+                entitlementService.countBranches(organization),
+                "branches");
 
         // Allow setup while PENDING so owners can complete onboarding before admin approval.
         // Bookings remain blocked until APPROVED + verified.
@@ -263,6 +379,13 @@ public class BusinessController {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
+        Organization organization = organizationOf(business);
+        entitlementService.requireHeadroom(
+                organization,
+                EntitlementService.MAX_STAFF,
+                entitlementService.countStaff(organization),
+                "staff members");
+
         User staffUser = null;
         if (request.getUserId() != null) {
             staffUser = userRepository.findById(request.getUserId())
@@ -274,11 +397,87 @@ public class BusinessController {
                 .user(staffUser)
                 .displayName(request.getName())
                 .designation(request.getDesignation())
+                .specialty(request.getSpecialty())
+                .bio(request.getBio())
                 .build();
 
         staffRepository.save(staff);
 
         return ResponseEntity.ok(new MessageResponse("Staff member " + staff.getName() + " added successfully!"));
+    }
+
+    @GetMapping("/staff/invites")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> listStaffInvites(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Organization organization = tenancyService.requireOrganizationForUser(user);
+        return ResponseEntity.ok(staffInviteService.list(organization).stream()
+                .map(staffInviteService::toView)
+                .toList());
+    }
+
+    @PostMapping("/staff/invites")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> createStaffInvite(
+            @Valid @RequestBody StaffInviteRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = tenancyService.requireBusinessForUser(user);
+        Organization organization = organizationOf(business);
+        return ResponseEntity.ok(staffInviteService.invite(
+                organization,
+                business,
+                user,
+                request.getBranchId(),
+                request.getEmail(),
+                request.getDisplayName(),
+                request.getDesignation()));
+    }
+
+    @DeleteMapping("/staff/invites/{id}")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> revokeStaffInvite(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Organization organization = tenancyService.requireOrganizationForUser(user);
+        staffInviteService.revoke(organization, id);
+        return ResponseEntity.ok(new MessageResponse("Invite revoked."));
+    }
+
+    @PutMapping("/staff/{id}/profile")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<?> updateStaffProfile(
+            @PathVariable Long id,
+            @RequestBody StaffRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Staff staff = staffRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Staff not found."));
+        Business business = tenancyService.requireBusinessForUser(user);
+        if (!staff.getBranch().getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Unauthorized."));
+        }
+        boolean isOwner = userDetails.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_BUSINESS_OWNER".equals(a.getAuthority()));
+        boolean isSelf = staff.getUser() != null && staff.getUser().getId().equals(user.getId());
+        if (!isOwner && !isSelf) {
+            return ResponseEntity.status(403).body(new MessageResponse("Unauthorized."));
+        }
+        if (request.getName() != null && !request.getName().isBlank()) {
+            staff.setDisplayName(request.getName());
+        }
+        if (request.getDesignation() != null) {
+            staff.setDesignation(request.getDesignation());
+        }
+        if (request.getSpecialty() != null) {
+            staff.setSpecialty(request.getSpecialty());
+        }
+        if (request.getBio() != null) {
+            staff.setBio(request.getBio());
+        }
+        staffRepository.save(staff);
+        return ResponseEntity.ok(staff);
     }
 
     @GetMapping("/staff")
@@ -857,6 +1056,7 @@ public class BusinessController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
+        entitlementService.requireFeature(organizationOf(business), EntitlementService.PACKAGES, "session packages");
 
         List<Service> services = serviceRepository.findAllById(request.getServiceIds());
 
@@ -891,6 +1091,7 @@ public class BusinessController {
         if (!pkg.getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
+        entitlementService.requireFeature(organizationOf(business), EntitlementService.PACKAGES, "session packages");
 
         List<Service> services = serviceRepository.findAllById(request.getServiceIds());
 
@@ -1063,6 +1264,7 @@ public class BusinessController {
         if (!service.getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
+        entitlementService.requireFeature(organizationOf(business), EntitlementService.PEAK_PRICING, "peak pricing");
 
         TimeOfDayPricing top = TimeOfDayPricing.builder()
                 .service(service)
@@ -1092,6 +1294,7 @@ public class BusinessController {
         if (!top.getService().getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
+        entitlementService.requireFeature(organizationOf(business), EntitlementService.PEAK_PRICING, "peak pricing");
 
         top.setDayOfWeek(request.getDayOfWeek());
         top.setStartTime(java.time.LocalTime.parse(request.getStartTime()));
@@ -1120,5 +1323,13 @@ public class BusinessController {
 
         timeOfDayPricingRepository.delete(top);
         return ResponseEntity.ok(new MessageResponse("Peak pricing rule deleted."));
+    }
+
+    private Organization organizationOf(Business business) {
+        Organization organization = business.getOrganization();
+        if (organization == null) {
+            throw new RuntimeException("Organization not found.");
+        }
+        return organization;
     }
 }

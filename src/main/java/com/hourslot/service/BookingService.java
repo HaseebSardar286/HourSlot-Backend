@@ -9,8 +9,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -40,10 +38,7 @@ public class BookingService {
     private StaffRepository staffRepository;
 
     @Autowired
-    private StaffServiceRepository staffServiceRepository;
-
-    @Autowired
-    private TimeOfDayPricingRepository timeOfDayPricingRepository;
+    private PricingService pricingService;
 
     @Autowired
     private SlotLockService slotLockService;
@@ -117,34 +112,10 @@ public class BookingService {
         LocalDateTime endTime = bookingTime.plusMinutes(service.getDurationMinutes());
         validateSlot(branch, staff, service, bookingTime, endTime, null);
 
-        BigDecimal basePrice = service.getBasePrice() == null ? BigDecimal.ZERO : service.getBasePrice();
-        if (staff != null) {
-            StaffService mapping = staffServiceRepository.findByStaffAndService(staff, service).orElse(null);
-            if (mapping != null && mapping.getPriceOverride() != null) {
-                basePrice = BigDecimal.valueOf(mapping.getPriceOverride());
-            }
-        }
-
-        DayOfWeek day = bookingTime.getDayOfWeek();
-        int dayNum = day.getValue();
-        LocalTime startLocal = bookingTime.toLocalTime();
-        LocalTime endLocal = endTime.toLocalTime();
-
-        BigDecimal multiplier = BigDecimal.ONE;
-        List<TimeOfDayPricing> peakRules = timeOfDayPricingRepository.findByServiceAndDayOfWeek(service, dayNum);
-        for (TimeOfDayPricing rule : peakRules) {
-            if (!rule.isActive()) {
-                continue;
-            }
-            if (startLocal.isBefore(rule.getEndTime()) && endLocal.isAfter(rule.getStartTime())) {
-                BigDecimal candidate = BigDecimal.valueOf(rule.getPriceMultiplier());
-                if (candidate.compareTo(multiplier) > 0) {
-                    multiplier = candidate;
-                }
-            }
-        }
-
-        BigDecimal finalPrice = basePrice.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+        PricingService.PriceQuote quote = pricingService.quote(service, staff, bookingTime, endTime);
+        BigDecimal basePrice = quote.getUnitPrice();
+        BigDecimal multiplier = quote.getPriceMultiplier();
+        BigDecimal finalPrice = quote.getTotalPrice();
 
         String paymentStatus = "UNPAID";
         String paymentMethod = "VENUE";

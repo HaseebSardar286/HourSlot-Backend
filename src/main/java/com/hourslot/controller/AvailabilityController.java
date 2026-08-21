@@ -2,12 +2,14 @@ package com.hourslot.controller;
 
 import com.hourslot.model.*;
 import com.hourslot.repository.*;
+import com.hourslot.service.PricingService;
 import com.hourslot.service.ScheduleService;
 import com.hourslot.service.SlotLockService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.LocalDateTime;
@@ -38,6 +40,9 @@ public class AvailabilityController {
 
     @Autowired
     private ScheduleService scheduleService;
+
+    @Autowired
+    private PricingService pricingService;
 
     @Autowired
     private BranchWorkingHourRepository branchWorkingHourRepository;
@@ -94,7 +99,7 @@ public class AvailabilityController {
             return ResponseEntity.ok(generateBranchSlots(branch, service, localDate, dayOfWeek));
         }
 
-        Set<String> uniqueSlots = new TreeSet<>();
+        Map<String, PricingService.PricedSlot> uniqueSlots = new TreeMap<>();
         for (Staff staff : targetStaff) {
             if (scheduleService.isHoliday(branch, staff, localDate)) {
                 continue;
@@ -115,14 +120,14 @@ public class AvailabilityController {
                     staff, startOfDay, endOfDay, activeStatuses
             );
 
-            uniqueSlots.addAll(generateSlotsForWindow(
-                    branchId, staff.getId(), service, localDate, wh.getStartTime(), wh.getEndTime(), wh.getBreaks(), bookings));
+            mergeSlots(uniqueSlots, generateSlotsForWindow(
+                    branchId, staff, service, localDate, wh.getStartTime(), wh.getEndTime(), wh.getBreaks(), bookings));
         }
 
-        return ResponseEntity.ok(new ArrayList<>(uniqueSlots));
+        return ResponseEntity.ok(new ArrayList<>(uniqueSlots.values()));
     }
 
-    private List<String> generateBranchSlots(Branch branch, Service service, LocalDate localDate, int dayOfWeek) {
+    private List<PricingService.PricedSlot> generateBranchSlots(Branch branch, Service service, LocalDate localDate, int dayOfWeek) {
         if (scheduleService.isHoliday(branch, null, localDate)) {
             return Collections.emptyList();
         }
@@ -142,13 +147,22 @@ public class AvailabilityController {
                 branch, startOfDay, endOfDay, activeStatuses
         );
 
-        return new ArrayList<>(generateSlotsForWindow(
-                branch.getId(), null, service, localDate, wh.getStartTime(), wh.getEndTime(), wh.getBreaks(), bookings));
+        return generateSlotsForWindow(
+                branch.getId(), null, service, localDate, wh.getStartTime(), wh.getEndTime(), wh.getBreaks(), bookings);
     }
 
-    private Set<String> generateSlotsForWindow(
+    private void mergeSlots(Map<String, PricingService.PricedSlot> into, List<PricingService.PricedSlot> incoming) {
+        for (PricingService.PricedSlot slot : incoming) {
+            PricingService.PricedSlot existing = into.get(slot.getStartTime());
+            if (existing == null || slot.getPrice() < existing.getPrice()) {
+                into.put(slot.getStartTime(), slot);
+            }
+        }
+    }
+
+    private List<PricingService.PricedSlot> generateSlotsForWindow(
             Long branchId,
-            Long staffId,
+            Staff staff,
             Service service,
             LocalDate localDate,
             LocalTime shiftStart,
@@ -156,10 +170,12 @@ public class AvailabilityController {
             List<ScheduleService.TimeWindow> breaks,
             List<Booking> bookings) {
 
-        Set<String> slots = new TreeSet<>();
+        List<PricingService.PricedSlot> slots = new ArrayList<>();
         LocalTime slotTime = shiftStart;
         int serviceDuration = service.getDurationMinutes() > 0 ? service.getDurationMinutes() : 30;
         int serviceBuffer = Math.max(0, service.getBufferMinutes());
+        List<TimeOfDayPricing> dayRules = pricingService.rulesFor(service, localDate.getDayOfWeek().getValue());
+        BigDecimal unitPrice = pricingService.unitPrice(service, staff);
 
         while (!slotTime.plusMinutes(serviceDuration).isAfter(shiftEnd)) {
             LocalTime slotStart = slotTime;
@@ -195,16 +211,19 @@ public class AvailabilityController {
                 continue;
             }
 
-            if (staffId != null) {
+            if (staff != null) {
                 LocalDateTime slotDateTime = localDate.atTime(slotStart);
-                String lockKey = slotLockService.buildLockKey(branchId, staffId, service.getId(), slotDateTime);
+                String lockKey = slotLockService.buildLockKey(branchId, staff.getId(), service.getId(), slotDateTime);
                 if (slotLockService.isLocked(lockKey)) {
                     slotTime = slotTime.plusMinutes(30);
                     continue;
                 }
             }
 
-            slots.add(String.format("%02d:%02d", slotStart.getHour(), slotStart.getMinute()));
+            LocalDateTime startAt = localDate.atTime(slotStart);
+            LocalDateTime endAt = localDate.atTime(slotEnd);
+            PricingService.PriceQuote quote = pricingService.quote(service, unitPrice, dayRules, startAt, endAt);
+            slots.add(pricingService.toSlot(slotStart, slotEnd, quote));
             slotTime = slotTime.plusMinutes(30);
         }
 

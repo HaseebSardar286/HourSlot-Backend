@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import com.hourslot.service.PlanLimitException;
 
 import java.util.stream.Collectors;
 
@@ -47,6 +48,13 @@ public class GlobalExceptionHandler {
         log.warn("Access denied: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(new ApiError("FORBIDDEN", "You do not have permission to perform this action."));
+    }
+
+    @ExceptionHandler(PlanLimitException.class)
+    public ResponseEntity<ApiError> handlePlanLimit(PlanLimitException ex) {
+        log.info("Plan limit: {} ({})", ex.getMessage(), ex.getEntitlementCode());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ApiError("PLAN_LIMIT", ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

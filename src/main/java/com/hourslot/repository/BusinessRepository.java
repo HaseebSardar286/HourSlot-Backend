@@ -29,4 +29,7 @@ public interface BusinessRepository extends JpaRepository<Business, Long> {
             WHERE om.user.id = :userId AND om.status = 'ACTIVE'
             """)
     boolean existsByMemberUserId(@Param("userId") Long userId);
+
+    @Query("SELECT COUNT(b) FROM Business b WHERE b.organization.id = :orgId")
+    long countByOrganizationId(@Param("orgId") Long orgId);
 }
