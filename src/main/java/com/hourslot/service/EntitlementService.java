@@ -196,7 +196,7 @@ public class EntitlementService {
     private Map<String, Object> entitlementsOf(SubscriptionPlan plan, Map<String, Object> overrides) {
         Map<String, Object> values = new LinkedHashMap<>();
         List<PlanEntitlement> rows = plan.getEntitlements();
-        if (rows == null || !org.hibernate.Hibernate.isInitialized(rows) || rows.isEmpty()) {
+        if (rows == null || rows.isEmpty()) {
             rows = planEntitlementRepository.findByPlan(plan);
         }
         for (PlanEntitlement row : rows) {

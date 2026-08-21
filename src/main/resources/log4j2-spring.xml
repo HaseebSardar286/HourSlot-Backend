@@ -44,8 +44,9 @@
         </Logger>
 
         <!-- Quiet noisy frameworks; raise to DEBUG only when needed -->
-        <Logger name="org.hibernate.SQL" level="WARN"/>
-        <Logger name="org.hibernate.type.descriptor.sql" level="WARN"/>
+        <Logger name="org.hibernate.SQL" level="DEBUG"/>
+        <Logger name="org.hibernate.orm.jdbc.bind" level="TRACE"/>
+        <Logger name="org.hibernate.type.descriptor.sql" level="TRACE"/>
         <Logger name="org.springframework.data.redis" level="WARN"/>
         <Logger name="org.springframework.security" level="WARN"/>
 

@@ -14,10 +14,8 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   jpa:
-    hibernate:
-      ddl-auto: none
     open-in-view: true
-    show-sql: false
+    show-sql: true
     properties:
       hibernate:
         format_sql: true
@@ -76,9 +74,6 @@ spring:
     url: ${DATABASE_URL:jdbc:postgresql://ep-rough-lab-ay5c9073.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require}
     username: ${DATABASE_USER:neondb_owner}
     password: ${DATABASE_PASSWORD:npg_TKPjdIqb34rC}
-  jpa:
-    hibernate:
-      ddl-auto: none
   flyway:
     enabled: true
   data:
@@ -97,9 +92,6 @@ spring:
   config:
     activate:
       on-profile: prod
-  jpa:
-    hibernate:
-      ddl-auto: validate
   flyway:
     enabled: true
 
