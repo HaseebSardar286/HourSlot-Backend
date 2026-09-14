@@ -1,7 +1,7 @@
 package com.hourslot;
 
-import com.hourslot.config.DatabaseUrlParser;
-import com.hourslot.config.EnvFileLoader;
+import com.hourslot.shared.config.DatabaseUrlParser;
+import com.hourslot.shared.config.EnvFileLoader;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration;

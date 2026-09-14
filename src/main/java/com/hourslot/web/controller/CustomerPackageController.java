@@ -1,0 +1,126 @@
+package com.hourslot.web.controller;
+
+import com.hourslot.identity.dto.MessageResponse;
+import com.hourslot.identity.security.CustomUserDetails;
+import com.hourslot.catalog.model.CustomerPackage;
+import com.hourslot.catalog.repository.CustomerPackageRepository;
+import com.hourslot.catalog.model.Service;
+import com.hourslot.catalog.model.ServicePackage;
+import com.hourslot.catalog.repository.ServicePackageRepository;
+import com.hourslot.catalog.repository.ServiceRepository;
+import com.hourslot.identity.model.User;
+import com.hourslot.identity.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api")
+public class CustomerPackageController {
+
+    @Autowired
+    private CustomerPackageRepository customerPackageRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private ServicePackageRepository servicePackageRepository;
+
+    @Autowired
+    private ServiceRepository serviceRepository;
+
+    @GetMapping("/customer/packages")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<?> getCustomerPackages(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User customer = userRepository.findById(userDetails.getId())
+                .orElseThrow(() -> new RuntimeException("Customer not found."));
+        List<CustomerPackage> pkgs = customerPackageRepository.findByCustomerUserOrderByCreatedAtDesc(customer);
+        return ResponseEntity.ok(pkgs);
+    }
+
+    @GetMapping("/customer/packages/eligible")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<?> getEligiblePackages(
+            @RequestParam Long serviceId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        
+        User customer = userRepository.findById(userDetails.getId())
+                .orElseThrow(() -> new RuntimeException("Customer not found."));
+
+        com.hourslot.catalog.model.Service service = serviceRepository.findById(serviceId)
+                .orElseThrow(() -> new RuntimeException("Service not found."));
+
+        List<CustomerPackage> allActive = customerPackageRepository.findByCustomerUserAndStatus(customer, "ACTIVE");
+        List<CustomerPackage> eligible = new ArrayList<>();
+
+        for (CustomerPackage cp : allActive) {
+            // Check expiry
+            if (cp.getExpiresAt() != null && LocalDateTime.now().isAfter(cp.getExpiresAt())) {
+                cp.setStatus("EXPIRED");
+                customerPackageRepository.save(cp);
+                continue;
+            }
+            if (cp.getSessionsRemaining() <= 0) {
+                cp.setStatus("EXHAUSTED");
+                customerPackageRepository.save(cp);
+                continue;
+            }
+
+            // Check if service is included in this package
+            ServicePackage sp = cp.getServicePackage();
+            boolean isIncluded = sp.getServices().stream().anyMatch(s -> s.getId().equals(serviceId));
+            if (isIncluded) {
+                eligible.add(cp);
+            }
+        }
+
+        return ResponseEntity.ok(eligible);
+    }
+
+    @PostMapping("/packages/{id}/purchase")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<?> purchasePackage(
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "VENUE") String paymentMethod,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+
+        User customer = userRepository.findById(userDetails.getId())
+                .orElseThrow(() -> new RuntimeException("Customer not found."));
+
+        ServicePackage servicePackage = servicePackageRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Service Package not found."));
+
+        if (paymentMethod.equalsIgnoreCase("ONLINE")) {
+            Map<String, Object> res = new HashMap<>();
+            res.put("stripeCheckoutRequired", true);
+            res.put("packageId", id);
+            return ResponseEntity.ok(res);
+        }
+
+        LocalDateTime expiresAt = null;
+        if (servicePackage.getExpiryDays() > 0) {
+            expiresAt = LocalDateTime.now().plusDays(servicePackage.getExpiryDays());
+        }
+
+        CustomerPackage cp = CustomerPackage.builder()
+                .customerUser(customer)
+                .servicePackage(servicePackage)
+                .business(servicePackage.getBusiness())
+                .sessionsRemaining(servicePackage.getSessionsCount())
+                .expiresAt(expiresAt)
+                .status("ACTIVE")
+                .build();
+
+        customerPackageRepository.save(cp);
+        return ResponseEntity.ok(cp);
+    }
+}
