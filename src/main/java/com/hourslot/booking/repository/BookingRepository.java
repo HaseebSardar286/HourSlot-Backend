@@ -33,7 +33,8 @@ public class BookingRepository {
     private static final String COLUMNS = """
             id, public_code, customer_user_id, organization_id, business_id, branch_id,
             booking_time, end_time, status, total_price, currency, payment_status, payment_method,
-            client_notes, internal_notes, source, customer_package_id, version, created_at, updated_at, deleted_at
+            client_notes, internal_notes, source, customer_package_id, service_request_id, quote_id,
+            version, created_at, updated_at, deleted_at
             """;
 
     private static final String SELECT = "SELECT " + COLUMNS + " FROM bookings ";
@@ -41,7 +42,8 @@ public class BookingRepository {
     private static final String SELECT_B = """
             SELECT DISTINCT b.id, b.public_code, b.customer_user_id, b.organization_id, b.business_id, b.branch_id,
                    b.booking_time, b.end_time, b.status, b.total_price, b.currency, b.payment_status, b.payment_method,
-                   b.client_notes, b.internal_notes, b.source, b.customer_package_id, b.version, b.created_at, b.updated_at, b.deleted_at
+                   b.client_notes, b.internal_notes, b.source, b.customer_package_id, b.service_request_id, b.quote_id,
+                   b.version, b.created_at, b.updated_at, b.deleted_at
             FROM bookings b
             """;
 
@@ -146,6 +148,33 @@ public class BookingRepository {
                 jdbc.params().addValue("branchId", branch.getId()));
     }
 
+    public List<Booking> findByBusinessAndBookingTimeBetween(Long businessId, LocalDateTime start, LocalDateTime end) {
+        List<Booking> bookings = findBookings(SELECT + """
+                 WHERE business_id = :businessId
+                   AND booking_time >= :start AND booking_time < :end
+                   AND deleted_at IS NULL
+                 ORDER BY booking_time
+                """, jdbc.params()
+                .addValue("businessId", businessId)
+                .addValue("start", JdbcSupport.ts(start))
+                .addValue("end", JdbcSupport.ts(end)));
+        attachDetails(bookings);
+        return bookings;
+    }
+
+    public List<Booking> findConfirmedBetween(LocalDateTime start, LocalDateTime end) {
+        List<Booking> bookings = findBookings(SELECT + """
+                 WHERE deleted_at IS NULL
+                   AND status = 'CONFIRMED'
+                   AND booking_time >= :start AND booking_time < :end
+                 ORDER BY booking_time
+                """, jdbc.params()
+                .addValue("start", JdbcSupport.ts(start))
+                .addValue("end", JdbcSupport.ts(end)));
+        attachDetails(bookings);
+        return bookings;
+    }
+
     public List<Booking> findByCustomerUserOrderByBookingTimeDesc(User customerUser) {
         return findBookings(SELECT + " WHERE customer_user_id = :userId AND deleted_at IS NULL ORDER BY booking_time DESC",
                 jdbc.params().addValue("userId", customerUser.getId()));
@@ -190,11 +219,13 @@ public class BookingRepository {
                     INSERT INTO bookings (
                         public_code, customer_user_id, organization_id, business_id, branch_id,
                         booking_time, end_time, status, total_price, currency, payment_status, payment_method,
-                        client_notes, internal_notes, source, customer_package_id, version, created_at, updated_at)
+                        client_notes, internal_notes, source, customer_package_id, service_request_id, quote_id,
+                        version, created_at, updated_at)
                     VALUES (
                         :publicCode, :customerUserId, :organizationId, :businessId, :branchId,
                         :bookingTime, :endTime, :status, :totalPrice, :currency, :paymentStatus, :paymentMethod,
-                        :clientNotes, :internalNotes, :source, :customerPackageId, :version, :createdAt, :updatedAt)
+                        :clientNotes, :internalNotes, :source, :customerPackageId, :serviceRequestId, :quoteId,
+                        :version, :createdAt, :updatedAt)
                     """, bind(booking));
             booking.setId(id);
         } else {
@@ -217,6 +248,8 @@ public class BookingRepository {
                         internal_notes = :internalNotes,
                         source = :source,
                         customer_package_id = :customerPackageId,
+                        service_request_id = :serviceRequestId,
+                        quote_id = :quoteId,
                         version = COALESCE(version, 1) + 1,
                         updated_at = :updatedAt
                     WHERE id = :id
@@ -394,6 +427,8 @@ public class BookingRepository {
                 .addValue("internalNotes", booking.getInternalNotes())
                 .addValue("source", booking.getSource())
                 .addValue("customerPackageId", booking.getCustomerPackage() == null ? null : booking.getCustomerPackage().getId())
+                .addValue("serviceRequestId", booking.getServiceRequestId())
+                .addValue("quoteId", booking.getQuoteId())
                 .addValue("version", booking.getVersion())
                 .addValue("createdAt", JdbcSupport.ts(booking.getCreatedAt()))
                 .addValue("updatedAt", JdbcSupport.ts(booking.getUpdatedAt()));

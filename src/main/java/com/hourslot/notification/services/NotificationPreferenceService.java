@@ -46,6 +46,9 @@ public class NotificationPreferenceService {
         if (updates.containsKey("emailMarketing")) {
             notificationPreferenceRepository.upsert(user, "EMAIL", "MARKETING", Boolean.TRUE.equals(updates.get("emailMarketing")));
         }
+        if (updates.containsKey("inAppMarketplace")) {
+            notificationPreferenceRepository.upsert(user, "IN_APP", "MARKETPLACE", Boolean.TRUE.equals(updates.get("inAppMarketplace")));
+        }
         return getPreferences(user);
     }
 
@@ -61,6 +64,7 @@ public class NotificationPreferenceService {
         defaults.put("emailBooking", true);
         defaults.put("smsReminder", true);
         defaults.put("emailMarketing", false);
+        defaults.put("inAppMarketplace", true);
         return defaults;
     }
 
@@ -73,6 +77,9 @@ public class NotificationPreferenceService {
         }
         if ("EMAIL".equals(channel) && "MARKETING".equals(eventType)) {
             return "emailMarketing";
+        }
+        if ("IN_APP".equals(channel) && "MARKETPLACE".equals(eventType)) {
+            return "inAppMarketplace";
         }
         return null;
     }

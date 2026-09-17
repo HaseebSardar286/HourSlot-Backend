@@ -100,8 +100,32 @@ public class BookingService {
     @Transactional
     public Booking createBooking(Long customerId, Long branchId, Long serviceId, Long staffId,
                                  LocalDateTime bookingTime, String clientNotes, Long customerPackageId) {
-        log.info("Creating booking customerId={} branchId={} serviceId={} staffId={} time={} packageId={}",
-                customerId, branchId, serviceId, staffId, bookingTime, customerPackageId);
+        return createBookingInternalEntry(customerId, branchId, serviceId, staffId, bookingTime,
+                clientNotes, customerPackageId, "DIRECT", null, null, null, false);
+    }
+
+    @Transactional
+    public Booking createBookingFromRequest(
+            Long customerId,
+            Long branchId,
+            Long serviceId,
+            Long staffId,
+            LocalDateTime bookingTime,
+            String clientNotes,
+            Long serviceRequestId,
+            Long quoteId,
+            BigDecimal quotedAmount) {
+        return createBookingInternalEntry(customerId, branchId, serviceId, staffId, bookingTime,
+                clientNotes, null, "REQUEST", serviceRequestId, quoteId, quotedAmount, true);
+    }
+
+    private Booking createBookingInternalEntry(
+            Long customerId, Long branchId, Long serviceId, Long staffId,
+            LocalDateTime bookingTime, String clientNotes, Long customerPackageId,
+            String source, Long serviceRequestId, Long quoteId, BigDecimal quotedAmount,
+            boolean allowQuoteService) {
+        log.info("Creating booking customerId={} branchId={} serviceId={} staffId={} time={} packageId={} source={}",
+                customerId, branchId, serviceId, staffId, bookingTime, customerPackageId, source);
         User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new RuntimeException("Customer not found."));
         customerProfileRepository.findById(customerId)
@@ -116,6 +140,10 @@ public class BookingService {
         branch.setBusiness(business);
         com.hourslot.catalog.model.Service service = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new RuntimeException("com.hourslot.catalog.model.Service not found."));
+
+        if (!allowQuoteService && (service.isRequiresQuote() || "QUOTE".equalsIgnoreCase(service.getPricingType()))) {
+            throw new RuntimeException("This service requires a quote and cannot be booked on a fixed slot yet.");
+        }
 
         if (business.getStatus() != BusinessStatus.APPROVED) {
             throw new RuntimeException("This business is not currently accepting bookings.");
@@ -136,7 +164,19 @@ public class BookingService {
         }
 
         try {
-            return createBookingInternal(customer, branch, service, staff, bookingTime, clientNotes, lockKey, customerPackageId);
+            Booking booking = createBookingInternal(customer, branch, service, staff, bookingTime, clientNotes,
+                    lockKey, customerPackageId);
+            booking.setSource(source == null ? "DIRECT" : source);
+            booking.setServiceRequestId(serviceRequestId);
+            booking.setQuoteId(quoteId);
+            if (quotedAmount != null) {
+                booking.setTotalPrice(quotedAmount);
+                if (booking.getItems() != null && !booking.getItems().isEmpty()) {
+                    booking.getItems().get(0).setUnitPrice(quotedAmount);
+                    booking.getItems().get(0).setLineTotal(quotedAmount);
+                }
+            }
+            return bookingRepository.save(booking);
         } catch (RuntimeException ex) {
             slotLockService.release(lockKey);
             throw ex;
@@ -207,7 +247,7 @@ public class BookingService {
                 .status(BookingStatus.CONFIRMED)
                 .paymentStatus(paymentStatus)
                 .paymentMethod(paymentMethod)
-                .source("MARKETPLACE")
+                .source("DIRECT")
                 .customerPackage(customerPackage)
                 .clientNotes(clientNotes)
                 .items(new ArrayList<>())

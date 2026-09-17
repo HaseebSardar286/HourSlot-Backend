@@ -106,6 +106,12 @@ public class AdminController {
     @Autowired
     private CategoryRepository categoryRepository;
 
+    @Autowired
+    private com.hourslot.geo.repository.GeoAreaRepository geoAreaRepository;
+
+    @Autowired
+    private com.hourslot.organization.services.ServiceAreaService serviceAreaService;
+
     @PostConstruct
     public void initDefaultConfig() {
         // Settings are seeded by Flyway (system_settings).
@@ -686,11 +692,16 @@ public class AdminController {
                 .primaryCategory(salonCat)
                 .status(BusinessStatus.APPROVED)
                 .verified(true)
+                .listingMode("BUSINESS")
+                .providerType("BUSINESS")
+                .serviceMode("AT_PROVIDER")
+                .publishStatus("PUBLISHED")
                 .ratingAvg(java.math.BigDecimal.valueOf(4.8))
                 .build();
         business1 = businessRepository.save(business1);
         business1.setVerified(true);
         business1.setStatus(BusinessStatus.APPROVED);
+        business1.setPublishStatus("PUBLISHED");
         business1 = businessRepository.save(business1);
         mediaAssetService.replaceLogo(business1.getId(), "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=120");
 
@@ -701,6 +712,10 @@ public class AdminController {
                 .primaryCategory(healthCat)
                 .status(BusinessStatus.PENDING)
                 .verified(false)
+                .listingMode("BUSINESS")
+                .providerType("BUSINESS")
+                .serviceMode("AT_PROVIDER")
+                .publishStatus("DRAFT")
                 .build();
         business2 = businessRepository.save(business2);
         mediaAssetService.replaceLogo(business2.getId(), "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=120");
@@ -777,13 +792,182 @@ public class AdminController {
         seedBooking(custUser2, business1, branch1, service2, staff2, LocalDateTime.now().minusMonths(2).withHour(14).withMinute(0), 90, BookingStatus.COMPLETED, 120.0);
         seedBooking(custUser, business1, branch1, service1, staff1, LocalDateTime.now().plusDays(2).withHour(11).withMinute(0), 45, BookingStatus.CONFIRMED, 45.0);
 
+        Category homeCat = Category.builder()
+                .name("Home services")
+                .icon("fa-house")
+                .active(true)
+                .build();
+        categoryRepository.save(homeCat);
+
+        User electricianOwner = User.builder()
+                .email("demo.electrician@hourslot.com")
+                .passwordHash(encoder.encode("password123"))
+                .firstName("Demo")
+                .lastName("Electrician")
+                .phoneNumber("+923001111111")
+                .status("ACTIVE")
+                .build();
+        userRepository.save(electricianOwner);
+        Business electrician = tenancyService.provisionIndividualProvider(
+                electricianOwner, "Demo Electrician Lahore", "PK", "Punjab", "Lahore", "Asia/Karachi", "PKR");
+        electrician.setPrimaryCategory(homeCat);
+        electrician.setDescription("Demo individual electrician covering named Lahore areas. Quote work is not slot-bookable.");
+        electrician.setServiceMode("CUSTOMER_LOCATION");
+        electrician.setStatus(BusinessStatus.APPROVED);
+        electrician.setPublishStatus("PUBLISHED");
+        electrician.setOnboardingState("PUBLISHED");
+        electrician.setYearsExperience(8);
+        electrician.setSlug("demo-electrician-lahore");
+        businessRepository.save(electrician);
+
+        Service wiringQuote = Service.builder()
+                .business(electrician)
+                .name("Demo wiring estimate")
+                .description("On-site assessment before quote. Requests arrive in Phase 2.")
+                .basePrice(java.math.BigDecimal.ZERO)
+                .currency("PKR")
+                .durationMinutes(60)
+                .pricingType("QUOTE")
+                .requiresQuote(true)
+                .serviceMode("CUSTOMER_LOCATION")
+                .allowsHomeService(true)
+                .build();
+        serviceRepository.save(wiringQuote);
+
+        Service outletFix = Service.builder()
+                .business(electrician)
+                .name("Demo outlet repair")
+                .description("Fixed-price visit for a single outlet repair.")
+                .basePrice(java.math.BigDecimal.valueOf(2500))
+                .currency("PKR")
+                .durationMinutes(45)
+                .pricingType("FIXED")
+                .serviceMode("CUSTOMER_LOCATION")
+                .allowsHomeService(true)
+                .build();
+        serviceRepository.save(outletFix);
+
+        geoAreaRepository.findActiveByCity("PK", "Lahore").stream().limit(2).forEach(area ->
+                serviceAreaService.create(electrician, com.hourslot.organization.model.BusinessServiceArea.builder()
+                        .coverageType("NAMED")
+                        .geoArea(area)
+                        .areaName(area.getName())
+                        .status("ACTIVE")
+                        .build()));
+
+        User cleanerOwner = User.builder()
+                .email("demo.cleaner@hourslot.com")
+                .passwordHash(encoder.encode("password123"))
+                .firstName("Demo")
+                .lastName("Cleaner")
+                .phoneNumber("+923002222222")
+                .status("ACTIVE")
+                .build();
+        userRepository.save(cleanerOwner);
+        Business cleaner = tenancyService.provisionIndividualProvider(
+                cleanerOwner, "Demo Cleaner Gulberg", "PK", "Punjab", "Lahore", "Asia/Karachi", "PKR");
+        cleaner.setPrimaryCategory(homeCat);
+        cleaner.setDescription("Demo hybrid cleaner with radius coverage and a bookable fixed home visit.");
+        cleaner.setServiceMode("HYBRID");
+        cleaner.setStatus(BusinessStatus.APPROVED);
+        cleaner.setPublishStatus("PUBLISHED");
+        cleaner.setOnboardingState("PUBLISHED");
+        cleaner.setYearsExperience(5);
+        cleaner.setTravelBufferMinutes(20);
+        cleaner.setSlug("demo-cleaner-gulberg");
+        businessRepository.save(cleaner);
+
+        Service deepClean = Service.builder()
+                .business(cleaner)
+                .name("Demo deep clean visit")
+                .description("Bookable fixed-price home clean on the implicit branch.")
+                .basePrice(java.math.BigDecimal.valueOf(4500))
+                .currency("PKR")
+                .durationMinutes(120)
+                .bufferMinutes(20)
+                .pricingType("FIXED")
+                .serviceMode("CUSTOMER_LOCATION")
+                .allowsHomeService(true)
+                .build();
+        serviceRepository.save(deepClean);
+
+        serviceAreaService.create(cleaner, com.hourslot.organization.model.BusinessServiceArea.builder()
+                .coverageType("RADIUS")
+                .areaName("Demo Gulberg radius")
+                .latitude(31.5102)
+                .longitude(74.3441)
+                .radiusKm(java.math.BigDecimal.valueOf(8))
+                .status("ACTIVE")
+                .build());
+
+        seedLahoreHomeDemo("demo.plumber@hourslot.com", "Plumber", "Demo Plumber Model Town",
+                "demo-plumber-model-town", homeCat, "Demo on-site plumbing diagnosis and repair.",
+                "Demo leak repair", "Fixed-price visit to stop a leaking tap or pipe joint.", 3200, 60);
+        seedLahoreHomeDemo("demo.ac@hourslot.com", "Technician", "Demo AC Repair Johar Town",
+                "demo-ac-johar-town", homeCat, "Demo AC service covering named Lahore areas.",
+                "Demo AC gas top-up quote", "Quote visit before refrigerant work.", 0, 50);
+        seedLahoreHomeDemo("demo.carpenter@hourslot.com", "Carpenter", "Demo Carpenter DHA",
+                "demo-carpenter-dha", homeCat, "Demo carpenter for furniture repair at the customer location.",
+                "Demo door hinge repair", "Fixed-price hinge and latch repair visit.", 2800, 75);
+
         // 7. Write seed audit logs
         logAction(adminDetails.getId(), "SEED_DATABASE", "System", 0L, 
                 "Successfully populated demo/mock database records.", request.getRemoteAddr());
         logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", business1.getId(), 
                 "Approved business: Zenith Hair Salon", request.getRemoteAddr());
+        logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", electrician.getId(),
+                "Approved demo individual: Demo Electrician Lahore", request.getRemoteAddr());
+        logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", cleaner.getId(),
+                "Approved demo individual: Demo Cleaner Gulberg", request.getRemoteAddr());
 
         return ResponseEntity.ok(new MessageResponse("Database seeded successfully with customers, businesses, branches, services, staff, bookings, and audit records!"));
+    }
+
+    private void seedLahoreHomeDemo(
+            String email, String lastName, String displayName, String slug, Category category,
+            String bio, String serviceName, String serviceDescription, double price, int durationMinutes) {
+        User owner = User.builder()
+                .email(email)
+                .passwordHash(encoder.encode("password123"))
+                .firstName("Demo")
+                .lastName(lastName)
+                .phoneNumber("+92300" + Math.abs(email.hashCode() % 1000000))
+                .status("ACTIVE")
+                .build();
+        userRepository.save(owner);
+        Business provider = tenancyService.provisionIndividualProvider(
+                owner, displayName, "PK", "Punjab", "Lahore", "Asia/Karachi", "PKR");
+        provider.setPrimaryCategory(category);
+        provider.setDescription(bio);
+        provider.setServiceMode("CUSTOMER_LOCATION");
+        provider.setStatus(BusinessStatus.APPROVED);
+        provider.setPublishStatus("PUBLISHED");
+        provider.setOnboardingState("PUBLISHED");
+        provider.setYearsExperience(6);
+        provider.setSlug(slug);
+        businessRepository.save(provider);
+
+        boolean quoteOnly = price <= 0;
+        serviceRepository.save(Service.builder()
+                .business(provider)
+                .name(serviceName)
+                .description(serviceDescription)
+                .basePrice(java.math.BigDecimal.valueOf(price))
+                .currency("PKR")
+                .durationMinutes(durationMinutes)
+                .pricingType(quoteOnly ? "QUOTE" : "FIXED")
+                .requiresQuote(quoteOnly)
+                .serviceMode("CUSTOMER_LOCATION")
+                .allowsHomeService(true)
+                .build());
+
+        geoAreaRepository.findActiveByCity("PK", "Lahore").stream().limit(2).forEach(area ->
+                serviceAreaService.create(provider, com.hourslot.organization.model.BusinessServiceArea.builder()
+                        .coverageType("NAMED")
+                        .geoArea(area)
+                        .areaName(area.getName())
+                        .status("ACTIVE")
+                        .build()));
     }
 
     // ==========================================

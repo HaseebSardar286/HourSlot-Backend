@@ -20,7 +20,7 @@ import java.util.Set;
 public class ReviewRepository {
 
     private static final String SELECT = """
-            SELECT id, customer_user_id, business_id, booking_id, rating, comment, owner_reply, owner_replied_at,
+            SELECT id, customer_user_id, business_id, booking_id, job_id, rating, comment, owner_reply, owner_replied_at,
                    is_visible, created_at, updated_at, deleted_at
             FROM reviews
             """;
@@ -44,10 +44,10 @@ public class ReviewRepository {
             review.onCreate();
             Long id = jdbc.insert("""
                     INSERT INTO reviews (
-                        customer_user_id, business_id, booking_id, rating, comment, owner_reply, owner_replied_at,
+                        customer_user_id, business_id, booking_id, job_id, rating, comment, owner_reply, owner_replied_at,
                         is_visible, created_at, updated_at)
                     VALUES (
-                        :customerUserId, :businessId, :bookingId, :rating, :comment, :ownerReply, :ownerRepliedAt,
+                        :customerUserId, :businessId, :bookingId, :jobId, :rating, :comment, :ownerReply, :ownerRepliedAt,
                         :visible, :createdAt, :updatedAt)
                     """, bind(review));
             review.setId(id);
@@ -59,6 +59,7 @@ public class ReviewRepository {
                     customer_user_id = :customerUserId,
                     business_id = :businessId,
                     booking_id = :bookingId,
+                    job_id = :jobId,
                     rating = :rating,
                     comment = :comment,
                     owner_reply = :ownerReply,
@@ -86,6 +87,15 @@ public class ReviewRepository {
         return jdbc.exists(
                 "SELECT COUNT(*) FROM reviews WHERE booking_id = :bookingId AND deleted_at IS NULL",
                 jdbc.params().addValue("bookingId", booking.getId()));
+    }
+
+    public boolean existsByJobId(Long jobId) {
+        if (jobId == null) {
+            return false;
+        }
+        return jdbc.exists(
+                "SELECT COUNT(*) FROM reviews WHERE job_id = :jobId AND deleted_at IS NULL",
+                jdbc.params().addValue("jobId", jobId));
     }
 
     private void attachCustomers(List<Review> reviews) {
@@ -121,6 +131,7 @@ public class ReviewRepository {
                 .addValue("customerUserId", review.getCustomerUser() == null ? null : review.getCustomerUser().getId())
                 .addValue("businessId", review.getBusiness() == null ? null : review.getBusiness().getId())
                 .addValue("bookingId", review.getBooking() == null ? null : review.getBooking().getId())
+                .addValue("jobId", review.getJobId())
                 .addValue("rating", review.getRating())
                 .addValue("comment", review.getComment())
                 .addValue("ownerReply", review.getOwnerReply())

@@ -5,6 +5,7 @@ import com.hourslot.identity.model.User;
 import com.hourslot.identity.repository.UserRepository;
 import com.hourslot.identity.security.CustomUserDetails;
 import com.hourslot.notification.services.NotificationPreferenceService;
+import com.hourslot.organization.repository.BusinessRepository;
 import com.hourslot.organization.services.RbacService;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -26,6 +27,9 @@ public class UserProfileController {
 
     @Autowired
     private NotificationPreferenceService notificationPreferenceService;
+
+    @Autowired
+    private BusinessRepository businessRepository;
 
     @Autowired
     private RbacService rbacService;
@@ -53,6 +57,8 @@ public class UserProfileController {
         body.put("lastName", user.getLastName());
         body.put("phoneNumber", user.getPhoneNumber());
         body.put("role", rbacService.resolveAppRole(user.getId()).name());
+        body.put("providerWorkspace", businessRepository.existsByMemberUserId(user.getId()));
+        body.put("customerWorkspace", true);
         return ResponseEntity.ok(body);
     }
 

@@ -60,8 +60,11 @@ public class Booking {
 
     private String internalNotes;
 
+    private Long serviceRequestId;
+    private Long quoteId;
+
     @Builder.Default
-    private String source = "MARKETPLACE";
+    private String source = "DIRECT";
 
     private CustomerPackage customerPackage;
 
@@ -131,7 +134,7 @@ public class Booking {
             this.currency = "USD";
         }
         if (this.source == null) {
-            this.source = "MARKETPLACE";
+            this.source = "DIRECT";
         }
         if (this.publicCode == null) {
             this.publicCode = "TMP-" + System.nanoTime();

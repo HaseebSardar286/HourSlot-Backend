@@ -39,6 +39,10 @@ public class Organization {
 
     private String timezone;
 
+    /** BUSINESS | INDIVIDUAL */
+    @Builder.Default
+    private String listingMode = "BUSINESS";
+
     @Builder.Default
     private List<OrganizationMember> members = new ArrayList<>();
 

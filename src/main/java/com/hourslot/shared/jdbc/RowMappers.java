@@ -12,11 +12,14 @@ import com.hourslot.availability.model.BranchHoliday;
 import com.hourslot.availability.model.BranchWorkingHour;
 import com.hourslot.availability.model.BranchWorkingInterval;
 import com.hourslot.organization.model.Business;
+import com.hourslot.organization.model.BusinessServiceArea;
 import com.hourslot.media.model.BusinessMedia;
 import com.hourslot.organization.model.BusinessStatus;
 import com.hourslot.organization.model.BusinessVerificationDocument;
 import com.hourslot.catalog.model.Category;
 import com.hourslot.identity.model.CustomerProfile;
+import com.hourslot.identity.model.CustomerAddress;
+import com.hourslot.geo.model.GeoArea;
 import com.hourslot.catalog.model.CustomerPackage;
 import com.hourslot.identity.model.EmailVerificationToken;
 import com.hourslot.booking.model.Favorite;
@@ -139,6 +142,15 @@ public class RowMappers {
         return service;
     }
 
+    public static GeoArea refGeoArea(Long id) {
+        if (id == null) {
+            return null;
+        }
+        GeoArea area = new GeoArea();
+        area.setId(id);
+        return area;
+    }
+
     public User mapUser(ResultSet rs, String p) throws SQLException {
         User user = new User();
         user.setId(JdbcSupport.getLong(rs, p + "id"));
@@ -174,6 +186,7 @@ public class RowMappers {
         organization.setRegion(JdbcSupport.optionalString(rs, p + "region"));
         organization.setCity(JdbcSupport.optionalString(rs, p + "city"));
         organization.setTimezone(rs.getString(p + "timezone"));
+        organization.setListingMode(JdbcSupport.optionalString(rs, p + "listing_mode"));
         organization.setCreatedAt(JdbcSupport.localDateTime(rs, p + "created_at"));
         organization.setUpdatedAt(JdbcSupport.localDateTime(rs, p + "updated_at"));
         organization.setDeletedAt(JdbcSupport.localDateTime(rs, p + "deleted_at"));
@@ -219,6 +232,21 @@ public class RowMappers {
         business.setRatingCount(count == null ? 0 : count);
         business.setTimezone(rs.getString("timezone"));
         business.setLocale(rs.getString("locale"));
+        business.setListingMode(JdbcSupport.optionalString(rs, "listing_mode"));
+        business.setProviderType(JdbcSupport.optionalString(rs, "provider_type"));
+        business.setServiceMode(JdbcSupport.optionalString(rs, "service_mode"));
+        business.setPublishStatus(JdbcSupport.optionalString(rs, "publish_status"));
+        business.setOnboardingState(JdbcSupport.optionalString(rs, "onboarding_state"));
+        try {
+            business.setYearsExperience(JdbcSupport.getInt(rs, "years_experience"));
+            Integer travelBuffer = JdbcSupport.getInt(rs, "travel_buffer_minutes");
+            business.setTravelBufferMinutes(travelBuffer == null ? 0 : travelBuffer);
+        } catch (SQLException ignored) {
+            // optional columns in partial discovery selects
+        }
+        business.setPhone(JdbcSupport.optionalString(rs, "phone"));
+        String ops = JdbcSupport.optionalString(rs, "ops_status");
+        business.setOpsStatus(ops == null || ops.isBlank() ? "AVAILABLE" : ops);
         business.setSettings(jdbc.readJsonb(rs, "settings"));
         try {
             business.setLogoUrl(rs.getString("logo_url"));
@@ -259,6 +287,11 @@ public class RowMappers {
         branch.setPostalCode(JdbcSupport.optionalString(rs, "postal_code"));
         branch.setTimezone(rs.getString("timezone"));
         branch.setActive(rs.getBoolean("is_active"));
+        try {
+            branch.setImplicit(rs.getBoolean("is_implicit"));
+        } catch (SQLException ignored) {
+            // optional in legacy hydration selects
+        }
         Integer sort = JdbcSupport.getInt(rs, "sort_order");
         branch.setSortOrder(sort == null ? 0 : sort);
         branch.setCreatedAt(JdbcSupport.localDateTime(rs, "created_at"));
@@ -281,6 +314,11 @@ public class RowMappers {
         BigDecimal avg = JdbcSupport.getDecimal(rs, "rating_avg");
         staff.setRatingAvg(avg == null ? BigDecimal.ZERO : avg);
         staff.setActive(rs.getBoolean("is_active"));
+        try {
+            staff.setImplicit(rs.getBoolean("is_implicit"));
+        } catch (SQLException ignored) {
+            // optional in legacy hydration selects
+        }
         Integer sort = JdbcSupport.getInt(rs, "sort_order");
         staff.setSortOrder(sort == null ? 0 : sort);
         staff.setCreatedAt(JdbcSupport.localDateTime(rs, "created_at"));
@@ -309,6 +347,18 @@ public class RowMappers {
         Integer capacity = JdbcSupport.getInt(rs, "capacity");
         service.setCapacity(capacity == null ? 1 : capacity);
         service.setGroupService(rs.getBoolean("is_group_service"));
+        service.setServiceMode(JdbcSupport.optionalString(rs, "service_mode"));
+        service.setPricingType(JdbcSupport.optionalString(rs, "pricing_type"));
+        service.setDurationType(JdbcSupport.optionalString(rs, "duration_type"));
+        try {
+            service.setRequiresQuote(rs.getBoolean("requires_quote"));
+            service.setAllowsHomeService(rs.getBoolean("allows_home_service"));
+            service.setMinimumPrice(JdbcSupport.getDecimal(rs, "minimum_price"));
+            service.setMaximumPrice(JdbcSupport.getDecimal(rs, "maximum_price"));
+            service.setEstimatedDurationMinutes(JdbcSupport.getInt(rs, "estimated_duration_minutes"));
+        } catch (SQLException ignored) {
+            // optional in partial selects
+        }
         Integer sort = JdbcSupport.getInt(rs, "sort_order");
         service.setSortOrder(sort == null ? 0 : sort);
         service.setMetadata(jdbc.readJsonb(rs, "metadata"));
@@ -317,6 +367,61 @@ public class RowMappers {
         service.setDeletedAt(JdbcSupport.localDateTime(rs, "deleted_at"));
         return service;
     }
+
+    public final RowMapper<GeoArea> geoArea = (rs, i) -> {
+        GeoArea area = new GeoArea();
+        area.setId(JdbcSupport.getLong(rs, "id"));
+        area.setCountryCode(rs.getString("country_code"));
+        area.setRegion(rs.getString("region"));
+        area.setCity(rs.getString("city"));
+        area.setName(rs.getString("name"));
+        area.setSlug(rs.getString("slug"));
+        area.setLatitude(JdbcSupport.getDouble(rs, "latitude"));
+        area.setLongitude(JdbcSupport.getDouble(rs, "longitude"));
+        area.setStatus(rs.getString("status"));
+        area.setCreatedAt(JdbcSupport.localDateTime(rs, "created_at"));
+        area.setUpdatedAt(JdbcSupport.localDateTime(rs, "updated_at"));
+        area.setDeletedAt(JdbcSupport.localDateTime(rs, "deleted_at"));
+        return area;
+    };
+
+    public final RowMapper<BusinessServiceArea> businessServiceArea = (rs, i) -> {
+        BusinessServiceArea area = new BusinessServiceArea();
+        area.setId(JdbcSupport.getLong(rs, "id"));
+        area.setBusiness(refBusiness(JdbcSupport.getLong(rs, "business_id")));
+        area.setCoverageType(rs.getString("coverage_type"));
+        area.setGeoArea(refGeoArea(JdbcSupport.getLong(rs, "geo_area_id")));
+        area.setAreaName(rs.getString("area_name"));
+        area.setLatitude(JdbcSupport.getDouble(rs, "latitude"));
+        area.setLongitude(JdbcSupport.getDouble(rs, "longitude"));
+        area.setRadiusKm(JdbcSupport.getDecimal(rs, "radius_km"));
+        area.setStatus(rs.getString("status"));
+        area.setCreatedAt(JdbcSupport.localDateTime(rs, "created_at"));
+        area.setUpdatedAt(JdbcSupport.localDateTime(rs, "updated_at"));
+        area.setDeletedAt(JdbcSupport.localDateTime(rs, "deleted_at"));
+        return area;
+    };
+
+    public final RowMapper<CustomerAddress> customerAddress = (rs, i) -> {
+        CustomerAddress address = new CustomerAddress();
+        address.setId(JdbcSupport.getLong(rs, "id"));
+        address.setCustomerUser(refUser(JdbcSupport.getLong(rs, "customer_user_id")));
+        address.setLabel(rs.getString("label"));
+        address.setAddressLine(rs.getString("address_line"));
+        address.setCountryCode(rs.getString("country_code"));
+        address.setRegion(rs.getString("region"));
+        address.setCity(rs.getString("city"));
+        address.setAreaName(rs.getString("area_name"));
+        address.setPostalCode(rs.getString("postal_code"));
+        address.setGeoArea(refGeoArea(JdbcSupport.getLong(rs, "geo_area_id")));
+        address.setLatitude(JdbcSupport.getDouble(rs, "latitude"));
+        address.setLongitude(JdbcSupport.getDouble(rs, "longitude"));
+        address.setDefault(rs.getBoolean("is_default"));
+        address.setCreatedAt(JdbcSupport.localDateTime(rs, "created_at"));
+        address.setUpdatedAt(JdbcSupport.localDateTime(rs, "updated_at"));
+        address.setDeletedAt(JdbcSupport.localDateTime(rs, "deleted_at"));
+        return address;
+    };
 
     public final RowMapper<Role> role = (rs, i) -> {
         Role role = new Role();
@@ -379,6 +484,12 @@ public class RowMappers {
         notification.setRead(rs.getBoolean("is_read"));
         notification.setSentAt(JdbcSupport.localDateTime(rs, "sent_at"));
         notification.setCreatedAt(JdbcSupport.localDateTime(rs, "created_at"));
+        try {
+            notification.setEventType(rs.getString("event_type"));
+            notification.setReferenceId(JdbcSupport.getLong(rs, "reference_id"));
+        } catch (SQLException ignored) {
+            // V16 columns
+        }
         return notification;
     };
 
@@ -415,6 +526,11 @@ public class RowMappers {
         Booking booking = new Booking();
         booking.setId(JdbcSupport.getLong(rs, "booking_id"));
         review.setBooking(booking);
+        try {
+            review.setJobId(JdbcSupport.getLong(rs, "job_id"));
+        } catch (SQLException ignored) {
+            // column added in V15
+        }
         review.setRating(rs.getInt("rating"));
         review.setComment(rs.getString("comment"));
         review.setOwnerReply(rs.getString("owner_reply"));
@@ -546,6 +662,8 @@ public class RowMappers {
         booking.setClientNotes(rs.getString("client_notes"));
         booking.setInternalNotes(rs.getString("internal_notes"));
         booking.setSource(rs.getString("source"));
+        booking.setServiceRequestId(JdbcSupport.getLong(rs, "service_request_id"));
+        booking.setQuoteId(JdbcSupport.getLong(rs, "quote_id"));
         Long pkgId = JdbcSupport.getLong(rs, "customer_package_id");
         if (pkgId != null) {
             CustomerPackage pkg = new CustomerPackage();

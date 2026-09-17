@@ -27,6 +27,10 @@ public class Notification {
 
     private String body;
 
+    private String eventType;
+
+    private Long referenceId;
+
     @Builder.Default
     private boolean read = false;
 

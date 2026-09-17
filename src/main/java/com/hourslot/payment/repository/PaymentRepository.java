@@ -6,6 +6,7 @@ import com.hourslot.payment.model.Payment;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -56,6 +57,14 @@ public class PaymentRepository {
     public Optional<Payment> findByProviderPaymentId(String providerPaymentId) {
         return jdbc.findOne(SELECT + " WHERE provider_payment_id = :providerPaymentId",
                 jdbc.params().addValue("providerPaymentId", providerPaymentId), rows.payment);
+    }
+
+    public List<Payment> findByBusinessId(Long businessId) {
+        return jdbc.findList(SELECT + """
+                 WHERE business_id = :businessId
+                 ORDER BY created_at DESC
+                 LIMIT 100
+                """, jdbc.params().addValue("businessId", businessId), rows.payment);
     }
 
     private MapSqlParameterSource bind(Payment payment) {

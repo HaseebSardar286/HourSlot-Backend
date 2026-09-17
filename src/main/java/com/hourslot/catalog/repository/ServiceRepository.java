@@ -18,6 +18,8 @@ public class ServiceRepository {
     private static final String SELECT = """
             SELECT id, business_id, name, description, base_price, currency, duration_minutes, buffer_minutes,
                    max_concurrent, is_active, capacity, is_group_service, sort_order, metadata,
+                   service_mode, pricing_type, duration_type, requires_quote, allows_home_service,
+                   minimum_price, maximum_price, estimated_duration_minutes,
                    created_at, updated_at, deleted_at
             FROM services
             """;
@@ -50,10 +52,14 @@ public class ServiceRepository {
             Long id = jdbc.insert("""
                     INSERT INTO services (business_id, name, description, base_price, currency, duration_minutes,
                                           buffer_minutes, max_concurrent, is_active, capacity, is_group_service,
-                                          sort_order, metadata, created_at, updated_at)
+                                          sort_order, service_mode, pricing_type, duration_type, requires_quote,
+                                          allows_home_service, minimum_price, maximum_price,
+                                          estimated_duration_minutes, metadata, created_at, updated_at)
                     VALUES (:businessId, :name, :description, :basePrice, :currency, :durationMinutes,
                             :bufferMinutes, :maxConcurrent, :active, :capacity, :groupService,
-                            :sortOrder, :metadata, :createdAt, :updatedAt)
+                            :sortOrder, :serviceMode, :pricingType, :durationType, :requiresQuote,
+                            :allowsHomeService, :minimumPrice, :maximumPrice,
+                            :estimatedDurationMinutes, :metadata, :createdAt, :updatedAt)
                     """, bind(service));
             service.setId(id);
             return service;
@@ -64,6 +70,10 @@ public class ServiceRepository {
                     base_price = :basePrice, currency = :currency, duration_minutes = :durationMinutes,
                     buffer_minutes = :bufferMinutes, max_concurrent = :maxConcurrent, is_active = :active,
                     capacity = :capacity, is_group_service = :groupService, sort_order = :sortOrder,
+                    service_mode = :serviceMode, pricing_type = :pricingType, duration_type = :durationType,
+                    requires_quote = :requiresQuote, allows_home_service = :allowsHomeService,
+                    minimum_price = :minimumPrice, maximum_price = :maximumPrice,
+                    estimated_duration_minutes = :estimatedDurationMinutes,
                     metadata = :metadata, updated_at = :updatedAt
                 WHERE id = :id
                 """, bind(service).addValue("id", service.getId()));
@@ -102,6 +112,14 @@ public class ServiceRepository {
                 .addValue("capacity", service.getCapacity())
                 .addValue("groupService", service.isGroupService())
                 .addValue("sortOrder", service.getSortOrder())
+                .addValue("serviceMode", service.getServiceMode())
+                .addValue("pricingType", service.getPricingType())
+                .addValue("durationType", service.getDurationType())
+                .addValue("requiresQuote", service.isRequiresQuote())
+                .addValue("allowsHomeService", service.isAllowsHomeService())
+                .addValue("minimumPrice", service.getMinimumPrice())
+                .addValue("maximumPrice", service.getMaximumPrice())
+                .addValue("estimatedDurationMinutes", service.getEstimatedDurationMinutes())
                 .addValue("metadata", jdbc.jsonb(service.getMetadata()))
                 .addValue("createdAt", JdbcSupport.ts(service.getCreatedAt()))
                 .addValue("updatedAt", JdbcSupport.ts(service.getUpdatedAt()));

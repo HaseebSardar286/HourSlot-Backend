@@ -67,6 +67,9 @@ public class DiscoveryController {
     @Autowired
     private StaffServiceRepository staffServiceRepository;
 
+    @Autowired
+    private com.hourslot.organization.repository.BusinessServiceAreaRepository businessServiceAreaRepository;
+
     @Data
     public static class PublicBusinessProfile {
         private Business business;
@@ -84,14 +87,23 @@ public class DiscoveryController {
             @RequestParam double lat,
             @RequestParam double lon,
             @RequestParam(defaultValue = "50000") double radius,
-            @RequestParam(required = false) String q) {
-        return ResponseEntity.ok(findNearby(lat, lon, radius, q));
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String serviceMode,
+            @RequestParam(required = false) String listingMode,
+            @RequestParam(required = false) Boolean verified,
+            @RequestParam(required = false) Long geoAreaId) {
+        return ResponseEntity.ok(findNearby(lat, lon, radius, q, serviceMode, listingMode, verified, geoAreaId));
     }
 
     @GetMapping("/search")
     @Transactional(readOnly = true)
-    public ResponseEntity<?> searchBranches(@RequestParam(defaultValue = "") String q) {
-        return ResponseEntity.ok(search(q));
+    public ResponseEntity<?> searchBranches(
+            @RequestParam(defaultValue = "") String q,
+            @RequestParam(required = false) String serviceMode,
+            @RequestParam(required = false) String listingMode,
+            @RequestParam(required = false) Boolean verified,
+            @RequestParam(required = false) Long geoAreaId) {
+        return ResponseEntity.ok(search(q, serviceMode, listingMode, verified, geoAreaId));
     }
 
     @GetMapping("/categories")
@@ -106,7 +118,8 @@ public class DiscoveryController {
         Business business = businessRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (business.getStatus() != BusinessStatus.APPROVED) {
+        if (business.getStatus() != BusinessStatus.APPROVED
+                || !"PUBLISHED".equalsIgnoreCase(business.getPublishStatus())) {
             throw new RuntimeException("Business is not available for booking.");
         }
 
@@ -139,7 +152,9 @@ public class DiscoveryController {
         return ResponseEntity.ok(profile);
     }
 
-    private List<DiscoverBranchResponse> findNearby(double lat, double lon, double radius, String q) {
+    private List<DiscoverBranchResponse> findNearby(
+            double lat, double lon, double radius, String q,
+            String serviceMode, String listingMode, Boolean verified, Long geoAreaId) {
         List<Long> ids = branchRepository.findNearbyBranchIds(lat, lon, radius);
         if (ids == null || ids.isEmpty()) {
             return Collections.emptyList();
@@ -157,18 +172,56 @@ public class DiscoveryController {
             }
         }
 
-        return filterByQuery(ordered, q).stream()
+        return applyDiscoveryFilters(ordered, q, serviceMode, listingMode, verified, geoAreaId).stream()
                 .map(branch -> toResponse(branch, lat, lon))
                 .collect(Collectors.toList());
     }
 
-    private List<DiscoverBranchResponse> search(String q) {
+    private List<DiscoverBranchResponse> search(
+            String q, String serviceMode, String listingMode, Boolean verified, Long geoAreaId) {
         List<Branch> branches = branchRepository.findAllWithBusiness().stream()
                 .filter(this::isBookable)
                 .collect(Collectors.toList());
-        return filterByQuery(branches, q).stream()
+        return applyDiscoveryFilters(branches, q, serviceMode, listingMode, verified, geoAreaId).stream()
                 .map(branch -> toResponse(branch, null, null))
                 .collect(Collectors.toList());
+    }
+
+    private List<Branch> applyDiscoveryFilters(
+            List<Branch> branches,
+            String q,
+            String serviceMode,
+            String listingMode,
+            Boolean verified,
+            Long geoAreaId) {
+        List<Branch> filtered = filterByQuery(branches, q);
+        if (serviceMode != null && !serviceMode.isBlank()) {
+            String mode = serviceMode.trim().toUpperCase();
+            filtered = filtered.stream()
+                    .filter(branch -> branch.getBusiness() != null
+                            && mode.equalsIgnoreCase(branch.getBusiness().getServiceMode()))
+                    .collect(Collectors.toList());
+        }
+        if (listingMode != null && !listingMode.isBlank()) {
+            String mode = listingMode.trim().toUpperCase();
+            filtered = filtered.stream()
+                    .filter(branch -> branch.getBusiness() != null
+                            && mode.equalsIgnoreCase(branch.getBusiness().getListingMode()))
+                    .collect(Collectors.toList());
+        }
+        if (Boolean.TRUE.equals(verified)) {
+            filtered = filtered.stream()
+                    .filter(branch -> branch.getBusiness() != null && branch.getBusiness().isVerified())
+                    .collect(Collectors.toList());
+        }
+        if (geoAreaId != null) {
+            java.util.Set<Long> ids = new java.util.HashSet<>(
+                    businessServiceAreaRepository.findBusinessIdsByGeoArea(geoAreaId));
+            filtered = filtered.stream()
+                    .filter(branch -> branch.getBusiness() != null && ids.contains(branch.getBusiness().getId()))
+                    .collect(Collectors.toList());
+        }
+        return filtered;
     }
 
     private List<Branch> filterByQuery(List<Branch> branches, String q) {
@@ -255,7 +308,8 @@ public class DiscoveryController {
     private boolean isBookable(Branch branch) {
         Business business = branch.getBusiness();
         return business != null
-                && business.getStatus() == BusinessStatus.APPROVED;
+                && business.getStatus() == BusinessStatus.APPROVED
+                && "PUBLISHED".equalsIgnoreCase(business.getPublishStatus());
     }
 
     private DiscoverBranchResponse toResponse(Branch branch, Double userLat, Double userLon) {
@@ -265,6 +319,7 @@ public class DiscoveryController {
         if (business != null) {
             businessDto.setId(business.getId());
             businessDto.setName(business.getName());
+            businessDto.setSlug(business.getSlug());
             businessDto.setDescription(business.getDescription());
             businessDto.setLogoUrl(business.getLogoUrl());
             businessDto.setGalleryUrls(business.getGalleryUrls());
@@ -272,6 +327,9 @@ public class DiscoveryController {
             businessDto.setVerified(business.isVerified());
             businessDto.setCurrency(business.getCurrency());
             businessDto.setCountryCode(business.getCountryCode());
+            businessDto.setListingMode(business.getListingMode());
+            businessDto.setServiceMode(business.getServiceMode());
+            businessDto.setOpsStatus(business.getOpsStatus());
             businessDto.setRating(business.getRating());
             businessDto.setPrimaryCategory(toCategorySummary(business.getPrimaryCategory()));
         }

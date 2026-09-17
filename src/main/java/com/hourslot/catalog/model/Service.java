@@ -1,5 +1,6 @@
 package com.hourslot.catalog.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Min;
@@ -20,6 +21,7 @@ public class Service {
 
     private Long id;
 
+    @JsonIgnore
     private Business business;
 
     @NotBlank
@@ -54,6 +56,29 @@ public class Service {
 
     @Builder.Default
     private int sortOrder = 0;
+
+    @Builder.Default
+    private String serviceMode = "AT_PROVIDER";
+
+    /** FIXED | FROM_PRICE | RANGE | QUOTE | VARIABLE */
+    @Builder.Default
+    private String pricingType = "FIXED";
+
+    /** FIXED | ESTIMATED | VARIABLE */
+    @Builder.Default
+    private String durationType = "FIXED";
+
+    @Builder.Default
+    private boolean requiresQuote = false;
+
+    @Builder.Default
+    private boolean allowsHomeService = false;
+
+    private BigDecimal minimumPrice;
+
+    private BigDecimal maximumPrice;
+
+    private Integer estimatedDurationMinutes;
 
     private Map<String, Object> metadata;
 

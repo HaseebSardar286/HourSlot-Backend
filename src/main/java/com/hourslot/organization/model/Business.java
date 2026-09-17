@@ -56,6 +56,36 @@ public class Business {
 
     private String locale;
 
+    /** BUSINESS | INDIVIDUAL */
+    @Builder.Default
+    private String listingMode = "BUSINESS";
+
+    /** INDIVIDUAL | SMALL_BUSINESS | BUSINESS | ENTERPRISE */
+    @Builder.Default
+    private String providerType = "BUSINESS";
+
+    /** AT_PROVIDER | CUSTOMER_LOCATION | REMOTE | HYBRID */
+    @Builder.Default
+    private String serviceMode = "AT_PROVIDER";
+
+    /** DRAFT | PUBLISHED | UNPUBLISHED */
+    @Builder.Default
+    private String publishStatus = "DRAFT";
+
+    @Builder.Default
+    private String onboardingState = "STARTED";
+
+    private Integer yearsExperience;
+
+    @Builder.Default
+    private int travelBufferMinutes = 0;
+
+    /** AVAILABLE | BUSY | UNAVAILABLE | VACATION */
+    @Builder.Default
+    private String opsStatus = "AVAILABLE";
+
+    private String phone;
+
     private Map<String, Object> settings;
 
     private String logoUrl;

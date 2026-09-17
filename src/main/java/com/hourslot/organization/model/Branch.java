@@ -48,6 +48,10 @@ public class Branch {
     @Builder.Default
     private boolean active = true;
 
+    /** Hidden default location for individual providers. */
+    @Builder.Default
+    private boolean implicit = false;
+
     @Builder.Default
     private int sortOrder = 0;
 

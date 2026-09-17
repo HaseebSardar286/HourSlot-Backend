@@ -6,6 +6,7 @@ import com.hourslot.organization.model.PlanEntitlement;
 import com.hourslot.organization.model.SubscriptionPlan;
 import com.hourslot.organization.repository.BranchRepository;
 import com.hourslot.organization.repository.BusinessRepository;
+import com.hourslot.organization.repository.BusinessServiceAreaRepository;
 import com.hourslot.organization.repository.OrganizationSubscriptionRepository;
 import com.hourslot.organization.repository.PlanEntitlementRepository;
 import com.hourslot.organization.repository.StaffRepository;
@@ -37,6 +38,9 @@ public class EntitlementService {
     public static final String YIELD_DASHBOARD = "yield_dashboard";
     public static final String WHITE_LABEL = "white_label";
     public static final String OWNER_REPLY = "owner_reply";
+    public static final String HOME_SERVICE = "home_service";
+    public static final String MAX_SERVICE_AREAS = "max_service_areas";
+    public static final String MAX_QUOTES_MONTHLY = "max_quotes_monthly";
 
     @Data
     @NoArgsConstructor
@@ -59,6 +63,7 @@ public class EntitlementService {
     private final BranchRepository branchRepository;
     private final StaffRepository staffRepository;
     private final BusinessRepository businessRepository;
+    private final BusinessServiceAreaRepository businessServiceAreaRepository;
 
     public EntitlementService(
             SubscriptionPlanRepository subscriptionPlanRepository,
@@ -66,13 +71,15 @@ public class EntitlementService {
             OrganizationSubscriptionRepository organizationSubscriptionRepository,
             BranchRepository branchRepository,
             StaffRepository staffRepository,
-            BusinessRepository businessRepository) {
+            BusinessRepository businessRepository,
+            BusinessServiceAreaRepository businessServiceAreaRepository) {
         this.subscriptionPlanRepository = subscriptionPlanRepository;
         this.planEntitlementRepository = planEntitlementRepository;
         this.organizationSubscriptionRepository = organizationSubscriptionRepository;
         this.branchRepository = branchRepository;
         this.staffRepository = staffRepository;
         this.businessRepository = businessRepository;
+        this.businessServiceAreaRepository = businessServiceAreaRepository;
     }
 
     @Transactional
@@ -100,16 +107,22 @@ public class EntitlementService {
         usage.put("branches", countBranches(organization));
         usage.put("staff", countStaff(organization));
         usage.put("businesses", countBusinesses(organization));
+        usage.put("serviceAreas", countServiceAreasForOrganization(organization.getId()));
 
         Map<String, String> unlocksAt = new LinkedHashMap<>();
         for (String code : List.of(
-                PEAK_PRICING, PACKAGES, WAITLIST, LAST_MINUTE_DEALS, YIELD_DASHBOARD, WHITE_LABEL, OWNER_REPLY)) {
+                PEAK_PRICING, PACKAGES, WAITLIST, LAST_MINUTE_DEALS, YIELD_DASHBOARD, WHITE_LABEL,
+                OWNER_REPLY, HOME_SERVICE)) {
             if (!asBoolean(entitlements.get(code))) {
                 unlocksAt.put(code, firstPlanUnlocking(code));
             }
         }
         unlocksAt.put(MAX_BRANCHES, firstPlanWithHigherLimit(MAX_BRANCHES, asInt(entitlements.get(MAX_BRANCHES), 1)));
         unlocksAt.put(MAX_STAFF, firstPlanWithHigherLimit(MAX_STAFF, asInt(entitlements.get(MAX_STAFF), 2)));
+        unlocksAt.put(MAX_SERVICE_AREAS,
+                firstPlanWithHigherLimit(MAX_SERVICE_AREAS, asInt(entitlements.get(MAX_SERVICE_AREAS), 0)));
+        unlocksAt.put(MAX_QUOTES_MONTHLY,
+                firstPlanWithHigherLimit(MAX_QUOTES_MONTHLY, asInt(entitlements.get(MAX_QUOTES_MONTHLY), 20)));
 
         return new OwnerPlanSnapshot(
                 plan.getCode(),
@@ -178,6 +191,14 @@ public class EntitlementService {
 
     public long countBusinesses(Organization organization) {
         return businessRepository.countByOrganizationId(organization.getId());
+    }
+
+    public long countServiceAreas(com.hourslot.organization.model.Business business) {
+        return businessServiceAreaRepository.countByBusinessId(business.getId());
+    }
+
+    public long countServiceAreasForOrganization(Long organizationId) {
+        return businessServiceAreaRepository.countByOrganizationId(organizationId);
     }
 
     private Map<String, Object> resolve(Organization organization, boolean persistStarter) {

@@ -51,10 +51,14 @@ public class BusinessRepository {
             Long id = jdbc.insert("""
                     INSERT INTO businesses (organization_id, name, slug, description, status, is_verified,
                                             rejection_reason, registration_number, primary_category_id, rating_avg,
-                                            rating_count, timezone, locale, settings, created_at, updated_at)
+                                            rating_count, timezone, locale, listing_mode, provider_type, service_mode,
+                                            publish_status, onboarding_state, years_experience, travel_buffer_minutes,
+                                            ops_status, phone, settings, created_at, updated_at)
                     VALUES (:organizationId, :name, :slug, :description, :status, :verified,
                             :rejectionReason, :registrationNumber, :primaryCategoryId, :ratingAvg,
-                            :ratingCount, :timezone, :locale, :settings, :createdAt, :updatedAt)
+                            :ratingCount, :timezone, :locale, :listingMode, :providerType, :serviceMode,
+                            :publishStatus, :onboardingState, :yearsExperience, :travelBufferMinutes,
+                            :opsStatus, :phone, :settings, :createdAt, :updatedAt)
                     """, bind(business));
             business.setId(id);
         } else {
@@ -64,7 +68,11 @@ public class BusinessRepository {
                         description = :description, status = :status, is_verified = :verified,
                         rejection_reason = :rejectionReason, registration_number = :registrationNumber,
                         primary_category_id = :primaryCategoryId, rating_avg = :ratingAvg, rating_count = :ratingCount,
-                        timezone = :timezone, locale = :locale, settings = :settings, updated_at = :updatedAt
+                        timezone = :timezone, locale = :locale, listing_mode = :listingMode,
+                        provider_type = :providerType, service_mode = :serviceMode,
+                        publish_status = :publishStatus, onboarding_state = :onboardingState,
+                        years_experience = :yearsExperience, travel_buffer_minutes = :travelBufferMinutes,
+                        ops_status = :opsStatus, phone = :phone, settings = :settings, updated_at = :updatedAt
                     WHERE id = :id
                     """, bind(business).addValue("id", business.getId()));
         }
@@ -118,12 +126,69 @@ public class BusinessRepository {
                 jdbc.params().addValue("orgId", orgId));
     }
 
+    /** Published providers eligible for request matching (optionally by primary category). */
+    public List<Business> findPublishedForMatching(Long categoryId, String city) {
+        return findPublishedForMatching(categoryId, city, false);
+    }
+
+    public List<Business> findPublishedForMatching(Long categoryId, String city, boolean expandSearch) {
+        StringBuilder sql = new StringBuilder(SELECT);
+        sql.append("""
+                 WHERE b.deleted_at IS NULL
+                   AND b.status = 'APPROVED'
+                   AND UPPER(b.publish_status) = 'PUBLISHED'
+                   AND UPPER(COALESCE(b.ops_status, 'AVAILABLE')) NOT IN ('UNAVAILABLE', 'VACATION')
+                """);
+        MapSqlParameterSource params = jdbc.params();
+        if (categoryId != null) {
+            sql.append("""
+                     AND (
+                       b.primary_category_id = :categoryId
+                       OR EXISTS (
+                         SELECT 1 FROM business_categories bc
+                         WHERE bc.business_id = b.id AND bc.category_id = :categoryId
+                       )
+                       OR UPPER(COALESCE(b.service_mode, '')) IN ('CUSTOMER_LOCATION', 'HYBRID', 'BOTH')
+                     )
+                    """);
+            params.addValue("categoryId", categoryId);
+        }
+        if (!expandSearch && city != null && !city.isBlank()) {
+            sql.append("""
+                     AND (
+                       EXISTS (
+                         SELECT 1 FROM branches br
+                         WHERE br.business_id = b.id AND br.deleted_at IS NULL
+                           AND LOWER(br.city) = LOWER(:city)
+                       )
+                       OR EXISTS (
+                         SELECT 1 FROM business_service_areas sa
+                         JOIN geo_areas ga ON ga.id = sa.geo_area_id
+                         WHERE sa.business_id = b.id AND sa.deleted_at IS NULL
+                           AND LOWER(ga.city) = LOWER(:city)
+                       )
+                       OR EXISTS (
+                         SELECT 1 FROM business_service_areas sa
+                         WHERE sa.business_id = b.id AND sa.deleted_at IS NULL
+                           AND LOWER(COALESCE(sa.area_name, '')) LIKE LOWER('%' || :city || '%')
+                       )
+                     )
+                    """);
+            params.addValue("city", city.trim());
+        }
+        sql.append(" ORDER BY b.rating_avg DESC NULLS LAST, b.id LIMIT 50");
+        List<Business> list = jdbc.findList(sql.toString(), params, rows.business);
+        list.forEach(business -> hydrate(business, false));
+        return list;
+    }
+
     private void hydrate(Business business, boolean secondary) {
         if (business.getOrganization() != null && business.getOrganization().getId() != null
                 && business.getOrganization().getDefaultCurrency() == null) {
             jdbc.findOne("""
                     SELECT id, name, slug, billing_email, status, stripe_customer_id, stripe_connect_account_id,
-                           default_currency, country_code, region, city, timezone, created_at, updated_at, deleted_at
+                           default_currency, country_code, region, city, timezone, listing_mode,
+                           created_at, updated_at, deleted_at
                     FROM organizations WHERE id = :id AND deleted_at IS NULL
                     """, jdbc.params().addValue("id", business.getOrganization().getId()), rows.organization)
                     .ifPresent(business::setOrganization);
@@ -179,6 +244,15 @@ public class BusinessRepository {
                 .addValue("ratingCount", business.getRatingCount())
                 .addValue("timezone", business.getTimezone())
                 .addValue("locale", business.getLocale())
+                .addValue("listingMode", business.getListingMode())
+                .addValue("providerType", business.getProviderType())
+                .addValue("serviceMode", business.getServiceMode())
+                .addValue("publishStatus", business.getPublishStatus())
+                .addValue("onboardingState", business.getOnboardingState())
+                .addValue("yearsExperience", business.getYearsExperience())
+                .addValue("travelBufferMinutes", business.getTravelBufferMinutes())
+                .addValue("opsStatus", business.getOpsStatus() == null ? "AVAILABLE" : business.getOpsStatus())
+                .addValue("phone", business.getPhone())
                 .addValue("settings", jdbc.jsonb(business.getSettings()))
                 .addValue("createdAt", JdbcSupport.ts(business.getCreatedAt()))
                 .addValue("updatedAt", JdbcSupport.ts(business.getUpdatedAt()));

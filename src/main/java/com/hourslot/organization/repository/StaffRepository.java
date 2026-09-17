@@ -17,7 +17,7 @@ public class StaffRepository {
 
     private static final String SELECT = """
             SELECT id, branch_id, user_id, display_name, designation, specialty, bio, rating_avg,
-                   is_active, sort_order, created_at, updated_at, deleted_at
+                   is_active, is_implicit, sort_order, created_at, updated_at, deleted_at
             FROM staff
             """;
 
@@ -47,9 +47,9 @@ public class StaffRepository {
             staff.onCreate();
             Long id = jdbc.insert("""
                     INSERT INTO staff (branch_id, user_id, display_name, designation, specialty, bio, rating_avg,
-                                       is_active, sort_order, created_at, updated_at)
+                                       is_active, is_implicit, sort_order, created_at, updated_at)
                     VALUES (:branchId, :userId, :displayName, :designation, :specialty, :bio, :ratingAvg,
-                            :active, :sortOrder, :createdAt, :updatedAt)
+                            :active, :implicit, :sortOrder, :createdAt, :updatedAt)
                     """, bind(staff));
             staff.setId(id);
             return staff;
@@ -58,7 +58,7 @@ public class StaffRepository {
         jdbc.update("""
                 UPDATE staff SET branch_id = :branchId, user_id = :userId, display_name = :displayName,
                     designation = :designation, specialty = :specialty, bio = :bio, rating_avg = :ratingAvg,
-                    is_active = :active, sort_order = :sortOrder, updated_at = :updatedAt
+                    is_active = :active, is_implicit = :implicit, sort_order = :sortOrder, updated_at = :updatedAt
                 WHERE id = :id
                 """, bind(staff).addValue("id", staff.getId()));
         return staff;
@@ -79,7 +79,7 @@ public class StaffRepository {
     public List<Staff> findByBusiness(Business business) {
         List<Staff> list = jdbc.findList("""
                 SELECT s.id, s.branch_id, s.user_id, s.display_name, s.designation, s.specialty, s.bio,
-                       s.rating_avg, s.is_active, s.sort_order, s.created_at, s.updated_at, s.deleted_at
+                       s.rating_avg, s.is_active, s.is_implicit, s.sort_order, s.created_at, s.updated_at, s.deleted_at
                 FROM staff s
                 JOIN branches br ON br.id = s.branch_id
                 WHERE br.business_id = :businessId
@@ -112,8 +112,9 @@ public class StaffRepository {
             return;
         }
         jdbc.findOne("""
-                SELECT id, business_id, name, address, latitude, longitude, phone_number, timezone,
-                       is_active, sort_order, created_at, updated_at, deleted_at
+                SELECT id, business_id, name, address, latitude, longitude, phone_number,
+                       country_code, region, city, postal_code, timezone,
+                       is_active, is_implicit, sort_order, created_at, updated_at, deleted_at
                 FROM branches WHERE id = :id AND deleted_at IS NULL
                 """, jdbc.params().addValue("id", staff.getBranch().getId()), rows.branch)
                 .ifPresent(branch -> {
@@ -137,6 +138,7 @@ public class StaffRepository {
                 .addValue("bio", staff.getBio())
                 .addValue("ratingAvg", staff.getRatingAvg())
                 .addValue("active", staff.isActive())
+                .addValue("implicit", staff.isImplicit())
                 .addValue("sortOrder", staff.getSortOrder())
                 .addValue("createdAt", JdbcSupport.ts(staff.getCreatedAt()))
                 .addValue("updatedAt", JdbcSupport.ts(staff.getUpdatedAt()));
