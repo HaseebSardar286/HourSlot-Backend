@@ -13,6 +13,8 @@ import com.hourslot.booking.model.Review;
 import com.hourslot.booking.repository.ReviewRepository;
 import com.hourslot.identity.model.User;
 import com.hourslot.identity.repository.UserRepository;
+import com.hourslot.job.model.Job;
+import com.hourslot.job.repository.JobRepository;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -47,10 +49,13 @@ public class ReviewController {
     @Autowired
     private BusinessRepository businessRepository;
 
+    @Autowired
+    private JobRepository jobRepository;
+
     @Data
     public static class ReviewRequest {
-        @NotNull
         private Long bookingId;
+        private Long jobId;
         
         @Min(1)
         @Max(5)
@@ -60,13 +65,38 @@ public class ReviewController {
     }
 
     @PostMapping("/reviews")
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> submitReview(
             @Valid @RequestBody ReviewRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-        Booking booking = bookingRepository.findByIdWithDetails(request.getBookingId())
-                .orElseThrow(() -> new RuntimeException("Booking not found."));
+        Booking booking;
+        Long jobId = request.getJobId();
+        if (jobId != null) {
+            Job job = jobRepository.findById(jobId)
+                    .orElseThrow(() -> new RuntimeException("Job not found."));
+            if (!job.getCustomerId().equals(userDetails.getId())) {
+                return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized to review this job."));
+            }
+            if (!"COMPLETED".equalsIgnoreCase(job.getStatus())) {
+                return ResponseEntity.badRequest().body(new MessageResponse("Error: Only completed jobs can be reviewed."));
+            }
+            if (reviewRepository.existsByJobId(jobId)
+                    || (job.getBookingId() != null && reviewRepository.existsByBooking(Booking.builder().id(job.getBookingId()).build()))) {
+                return ResponseEntity.badRequest().body(new MessageResponse("Error: A review has already been submitted."));
+            }
+            if (job.getBookingId() == null) {
+                return ResponseEntity.badRequest().body(new MessageResponse("Error: Job is not linked to a booking."));
+            }
+            booking = bookingRepository.findByIdWithDetails(job.getBookingId())
+                    .orElseThrow(() -> new RuntimeException("Booking not found."));
+        } else {
+            if (request.getBookingId() == null) {
+                return ResponseEntity.badRequest().body(new MessageResponse("Error: bookingId or jobId is required."));
+            }
+            booking = bookingRepository.findByIdWithDetails(request.getBookingId())
+                    .orElseThrow(() -> new RuntimeException("Booking not found."));
+        }
 
         // 1. Check ownership
         if (!booking.getCustomer().getId().equals(userDetails.getId())) {
@@ -93,6 +123,7 @@ public class ReviewController {
                 .customerUser(booking.getCustomerUser())
                 .business(reviewBusiness)
                 .booking(booking)
+                .jobId(jobId)
                 .rating(request.getRating())
                 .comment(request.getComment())
                 .build();

@@ -77,7 +77,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**", "/api/payments/webhook", "/error").permitAll()
                 .requestMatchers("/api/business/profile-by-slug/**").permitAll()
                 .requestMatchers("/api/public/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/providers/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/discover/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/communities", "/api/communities/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/community/posts/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/reviews/business/**").permitAll()
                 .requestMatchers("/uploads/**").permitAll()
                 // External tools sometimes probe this path on localhost:8080 — not an HourSlot API

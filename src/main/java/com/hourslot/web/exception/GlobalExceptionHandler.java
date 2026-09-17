@@ -67,7 +67,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiError> handleIllegalState(IllegalStateException ex) {
         log.warn("Illegal state: {}", ex.getMessage());
-        return ResponseEntity.badRequest().body(new ApiError("BAD_REQUEST", ex.getMessage()));
+        String message = ex.getMessage() == null ? "Conflict." : ex.getMessage();
+        if (message.contains("already owns") || message.contains("already in use")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("CONFLICT", message));
+        }
+        return ResponseEntity.badRequest().body(new ApiError("BAD_REQUEST", message));
+    }
+
+    @ExceptionHandler(SecurityException.class)
+    public ResponseEntity<ApiError> handleSecurity(SecurityException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ApiError("FORBIDDEN", ex.getMessage()));
     }
 
     @ExceptionHandler(RuntimeException.class)

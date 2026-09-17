@@ -15,7 +15,7 @@ import java.util.Optional;
 public class NotificationRepository {
 
     private static final String SELECT = """
-            SELECT id, user_id, channel, title, body, is_read, sent_at, created_at
+            SELECT id, user_id, channel, title, body, is_read, sent_at, created_at, event_type, reference_id
             FROM notifications
             """;
 
@@ -36,8 +36,8 @@ public class NotificationRepository {
         if (notification.getId() == null) {
             notification.onCreate();
             Long id = jdbc.insert("""
-                    INSERT INTO notifications (user_id, channel, title, body, is_read, sent_at, created_at)
-                    VALUES (:userId, :channel, :title, :body, :read, :sentAt, :createdAt)
+                    INSERT INTO notifications (user_id, channel, title, body, is_read, sent_at, created_at, event_type, reference_id)
+                    VALUES (:userId, :channel, :title, :body, :read, :sentAt, :createdAt, :eventType, :referenceId)
                     """, bind(notification));
             notification.setId(id);
             return notification;
@@ -71,6 +71,16 @@ public class NotificationRepository {
         return countUnreadByUserId(user == null ? null : user.getId());
     }
 
+    public boolean existsEvent(Long userId, String eventType, Long referenceId) {
+        return jdbc.exists("""
+                SELECT COUNT(*) FROM notifications
+                WHERE user_id = :userId AND event_type = :eventType AND reference_id = :referenceId
+                """, jdbc.params()
+                .addValue("userId", userId)
+                .addValue("eventType", eventType)
+                .addValue("referenceId", referenceId));
+    }
+
     public long countUnreadByUserId(Long userId) {
         return jdbc.count("SELECT COUNT(*) FROM notifications WHERE user_id = :userId AND is_read = false",
                 jdbc.params().addValue("userId", userId));
@@ -84,6 +94,8 @@ public class NotificationRepository {
                 .addValue("body", notification.getBody())
                 .addValue("read", notification.isRead())
                 .addValue("sentAt", JdbcSupport.ts(notification.getSentAt()))
-                .addValue("createdAt", JdbcSupport.ts(notification.getCreatedAt()));
+                .addValue("createdAt", JdbcSupport.ts(notification.getCreatedAt()))
+                .addValue("eventType", notification.getEventType())
+                .addValue("referenceId", notification.getReferenceId());
     }
 }

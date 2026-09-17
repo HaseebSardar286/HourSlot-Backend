@@ -21,6 +21,7 @@ public class DiscoverBranchResponse {
     public static class DiscoverBusinessResponse {
         private Long id;
         private String name;
+        private String slug;
         private String description;
         private String logoUrl;
         private String galleryUrls;
@@ -28,6 +29,9 @@ public class DiscoverBranchResponse {
         private boolean verified;
         private String currency;
         private String countryCode;
+        private String listingMode;
+        private String serviceMode;
+        private String opsStatus;
         private CategorySummary primaryCategory;
         private double rating;
     }

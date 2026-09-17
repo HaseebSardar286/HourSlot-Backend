@@ -40,6 +40,10 @@ public class Staff {
     @Builder.Default
     private boolean active = true;
 
+    /** Auto-created performer for individual providers. */
+    @Builder.Default
+    private boolean implicit = false;
+
     @Builder.Default
     private int sortOrder = 0;
 

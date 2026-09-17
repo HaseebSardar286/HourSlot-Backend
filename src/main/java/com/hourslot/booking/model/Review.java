@@ -25,6 +25,8 @@ public class Review {
 
     private Booking booking;
 
+    private Long jobId;
+
     @Min(1)
     @Max(5)
     private int rating;

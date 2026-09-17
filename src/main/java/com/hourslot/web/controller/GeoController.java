@@ -3,6 +3,7 @@ package com.hourslot.web.controller;
 import com.hourslot.geo.dto.CountryView;
 import com.hourslot.geo.dto.CurrencyView;
 import com.hourslot.geo.services.GeoCatalogService;
+import com.hourslot.geo.repository.GeoAreaRepository;
 import com.hourslot.organization.services.SystemSettingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,10 +25,15 @@ public class GeoController {
 
     private final GeoCatalogService geoCatalogService;
     private final SystemSettingService systemSettingService;
+    private final GeoAreaRepository geoAreaRepository;
 
-    public GeoController(GeoCatalogService geoCatalogService, SystemSettingService systemSettingService) {
+    public GeoController(
+            GeoCatalogService geoCatalogService,
+            SystemSettingService systemSettingService,
+            GeoAreaRepository geoAreaRepository) {
         this.geoCatalogService = geoCatalogService;
         this.systemSettingService = systemSettingService;
+        this.geoAreaRepository = geoAreaRepository;
     }
 
     @GetMapping("/countries")
@@ -60,6 +66,13 @@ public class GeoController {
     @GetMapping("/cities")
     public ResponseEntity<?> cities(@RequestParam String country, @RequestParam String state) {
         return ResponseEntity.ok(geoCatalogService.listCities(country, state));
+    }
+
+    @GetMapping("/areas")
+    public ResponseEntity<?> areas(
+            @RequestParam(required = false) String country,
+            @RequestParam(required = false) String city) {
+        return ResponseEntity.ok(geoAreaRepository.findActiveByCity(country, city));
     }
 
     @GetMapping("/timezones")

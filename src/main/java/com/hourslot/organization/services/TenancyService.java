@@ -98,6 +98,77 @@ public class TenancyService {
         return organization;
     }
 
+    @Transactional
+    public Business provisionIndividualProvider(
+            User owner,
+            String displayName,
+            String countryCode,
+            String region,
+            String city,
+            String timezone,
+            String currency) {
+        Optional<Business> existing = findBusinessForUser(owner);
+        if (existing.isPresent()) {
+            if ("INDIVIDUAL".equalsIgnoreCase(existing.get().getListingMode())) {
+                return existing.get();
+            }
+            throw new IllegalStateException(
+                    "This account already owns a business listing and cannot create an individual provider listing.");
+        }
+
+        String resolvedName = blankToNull(displayName);
+        if (resolvedName == null) {
+            resolvedName = ((owner.getFirstName() == null ? "" : owner.getFirstName()) + " "
+                    + (owner.getLastName() == null ? "" : owner.getLastName())).trim();
+        }
+        if (resolvedName.isBlank()) {
+            resolvedName = "Individual Provider";
+        }
+
+        Organization organization = provisionOrganization(
+                owner, resolvedName, currency, countryCode, region, city, timezone);
+        organization.setListingMode("INDIVIDUAL");
+        organizationRepository.save(organization);
+
+        Business business = Business.builder()
+                .organization(organization)
+                .name(resolvedName)
+                .slug(uniqueBusinessSlug(resolvedName, owner.getId()))
+                .listingMode("INDIVIDUAL")
+                .providerType("INDIVIDUAL")
+                .serviceMode("CUSTOMER_LOCATION")
+                .status(com.hourslot.organization.model.BusinessStatus.PENDING)
+                .publishStatus("DRAFT")
+                .onboardingState("STARTED")
+                .timezone(blankToNull(timezone))
+                .phone(owner.getPhoneNumber())
+                .build();
+        business = businessRepository.save(business);
+
+        Branch branch = Branch.builder()
+                .business(business)
+                .name("Service area")
+                .address(blankToNull(city) == null ? "Service area" : city.trim())
+                .latitude(0.0)
+                .longitude(0.0)
+                .countryCode(blankToNull(countryCode) == null ? null : countryCode.trim().toUpperCase(Locale.ROOT))
+                .region(blankToNull(region))
+                .city(blankToNull(city))
+                .timezone(blankToNull(timezone))
+                .implicit(true)
+                .build();
+        branch = branchRepository.save(branch);
+
+        staffRepository.save(Staff.builder()
+                .branch(branch)
+                .user(owner)
+                .displayName(resolvedName)
+                .designation("Provider")
+                .implicit(true)
+                .build());
+        return business;
+    }
+
     @Transactional(readOnly = true)
     public Optional<Organization> findOrganizationForUser(User user) {
         List<OrganizationMember> members = organizationMemberRepository.findActiveWithOrgByUserId(user.getId());
@@ -231,6 +302,21 @@ public class TenancyService {
             return slug;
         }
         return slug + "-" + UUID.randomUUID().toString().substring(0, 6);
+    }
+
+    private String uniqueBusinessSlug(String name, Long userId) {
+        String base = slugify(name);
+        if (base.isBlank()) {
+            base = "provider";
+        }
+        if (!businessRepository.existsBySlug(base)) {
+            return base;
+        }
+        String candidate = base + "-" + userId;
+        if (!businessRepository.existsBySlug(candidate)) {
+            return candidate;
+        }
+        return candidate + "-" + UUID.randomUUID().toString().substring(0, 6);
     }
 
     private String slugify(String text) {

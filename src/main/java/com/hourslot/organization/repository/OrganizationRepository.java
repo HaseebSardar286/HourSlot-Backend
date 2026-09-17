@@ -13,7 +13,8 @@ public class OrganizationRepository {
 
     private static final String SELECT = """
             SELECT id, name, slug, billing_email, status, stripe_customer_id, stripe_connect_account_id,
-                   default_currency, country_code, region, city, timezone, created_at, updated_at, deleted_at
+                   default_currency, country_code, region, city, timezone, listing_mode,
+                   created_at, updated_at, deleted_at
             FROM organizations
             """;
 
@@ -31,9 +32,10 @@ public class OrganizationRepository {
             Long id = jdbc.insert("""
                     INSERT INTO organizations (name, slug, billing_email, status, stripe_customer_id,
                                                stripe_connect_account_id, default_currency, country_code, region, city,
-                                               timezone, created_at, updated_at)
+                                               timezone, listing_mode, created_at, updated_at)
                     VALUES (:name, :slug, :billingEmail, :status, :stripeCustomerId, :stripeConnectAccountId,
-                            :defaultCurrency, :countryCode, :region, :city, :timezone, :createdAt, :updatedAt)
+                            :defaultCurrency, :countryCode, :region, :city, :timezone, :listingMode,
+                            :createdAt, :updatedAt)
                     """, bind(organization));
             organization.setId(id);
             return organization;
@@ -43,7 +45,7 @@ public class OrganizationRepository {
                 UPDATE organizations SET name = :name, slug = :slug, billing_email = :billingEmail, status = :status,
                     stripe_customer_id = :stripeCustomerId, stripe_connect_account_id = :stripeConnectAccountId,
                     default_currency = :defaultCurrency, country_code = :countryCode, region = :region, city = :city,
-                    timezone = :timezone, updated_at = :updatedAt
+                    timezone = :timezone, listing_mode = :listingMode, updated_at = :updatedAt
                 WHERE id = :id
                 """, bind(organization).addValue("id", organization.getId()));
         return organization;
@@ -77,6 +79,7 @@ public class OrganizationRepository {
                 .addValue("region", organization.getRegion())
                 .addValue("city", organization.getCity())
                 .addValue("timezone", organization.getTimezone())
+                .addValue("listingMode", organization.getListingMode())
                 .addValue("createdAt", JdbcSupport.ts(organization.getCreatedAt()))
                 .addValue("updatedAt", JdbcSupport.ts(organization.getUpdatedAt()));
     }

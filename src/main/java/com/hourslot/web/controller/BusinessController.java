@@ -20,6 +20,7 @@ import com.hourslot.identity.security.CustomUserDetails;
 import com.hourslot.identity.model.CustomerProfile;
 import com.hourslot.identity.repository.CustomerProfileRepository;
 import com.hourslot.organization.services.EntitlementService;
+import com.hourslot.organization.services.UsageCounterService;
 import com.hourslot.media.services.MediaAssetService;
 import com.hourslot.organization.model.Organization;
 import com.hourslot.organization.model.PlanEntitlement;
@@ -135,6 +136,9 @@ public class BusinessController {
     private EntitlementService entitlementService;
 
     @Autowired
+    private UsageCounterService usageCounterService;
+
+    @Autowired
     private SubscriptionPlanRepository subscriptionPlanRepository;
 
     @Autowired
@@ -212,6 +216,14 @@ public class BusinessController {
         private Boolean active;
         private Integer capacity;
         private Boolean groupService;
+        private String serviceMode;
+        private String pricingType;
+        private String durationType;
+        private Boolean requiresQuote;
+        private Boolean allowsHomeService;
+        private Double minimumPrice;
+        private Double maximumPrice;
+        private Integer estimatedDurationMinutes;
     }
 
     @Data
@@ -316,6 +328,14 @@ public class BusinessController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Organization organization = tenancyService.requireOrganizationForUser(user);
         return ResponseEntity.ok(entitlementService.snapshot(organization));
+    }
+
+    @GetMapping("/usage")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<?> getUsage(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Organization organization = tenancyService.requireOrganizationForUser(user);
+        return ResponseEntity.ok(usageCounterService.currentMonthUsage(organization));
     }
 
     @GetMapping("/plans")
@@ -446,6 +466,17 @@ public class BusinessController {
                 .active(request.getActive() != null ? request.getActive() : true)
                 .capacity(request.getCapacity() != null ? request.getCapacity() : 1)
                 .groupService(Boolean.TRUE.equals(request.getGroupService()))
+                .serviceMode(request.getServiceMode() == null ? "AT_PROVIDER" : request.getServiceMode())
+                .pricingType(request.getPricingType() == null ? "FIXED" : request.getPricingType().trim().toUpperCase())
+                .durationType(request.getDurationType() == null ? "FIXED" : request.getDurationType())
+                .requiresQuote(Boolean.TRUE.equals(request.getRequiresQuote())
+                        || "QUOTE".equalsIgnoreCase(request.getPricingType()))
+                .allowsHomeService(Boolean.TRUE.equals(request.getAllowsHomeService()))
+                .minimumPrice(request.getMinimumPrice() == null ? null
+                        : java.math.BigDecimal.valueOf(request.getMinimumPrice()))
+                .maximumPrice(request.getMaximumPrice() == null ? null
+                        : java.math.BigDecimal.valueOf(request.getMaximumPrice()))
+                .estimatedDurationMinutes(request.getEstimatedDurationMinutes())
                 .build();
 
         serviceRepository.save(service);
@@ -1114,6 +1145,27 @@ public class BusinessController {
         }
         if (request.getGroupService() != null) {
             service.setGroupService(request.getGroupService());
+        }
+        if (request.getServiceMode() != null) service.setServiceMode(request.getServiceMode());
+        if (request.getPricingType() != null) {
+            service.setPricingType(request.getPricingType().trim().toUpperCase());
+        }
+        if (request.getDurationType() != null) service.setDurationType(request.getDurationType());
+        if (request.getRequiresQuote() != null) {
+            service.setRequiresQuote(request.getRequiresQuote());
+        }
+        if ("QUOTE".equalsIgnoreCase(service.getPricingType())) {
+            service.setRequiresQuote(true);
+        }
+        if (request.getAllowsHomeService() != null) service.setAllowsHomeService(request.getAllowsHomeService());
+        if (request.getMinimumPrice() != null) {
+            service.setMinimumPrice(java.math.BigDecimal.valueOf(request.getMinimumPrice()));
+        }
+        if (request.getMaximumPrice() != null) {
+            service.setMaximumPrice(java.math.BigDecimal.valueOf(request.getMaximumPrice()));
+        }
+        if (request.getEstimatedDurationMinutes() != null) {
+            service.setEstimatedDurationMinutes(request.getEstimatedDurationMinutes());
         }
 
         serviceRepository.save(service);

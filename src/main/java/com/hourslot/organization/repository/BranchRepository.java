@@ -21,16 +21,17 @@ public class BranchRepository {
 
     private static final String SELECT = """
             SELECT id, business_id, name, address, latitude, longitude, phone_number, country_code, region, city,
-                   postal_code, timezone, is_active, sort_order, created_at, updated_at, deleted_at
+                   postal_code, timezone, is_active, is_implicit, sort_order, created_at, updated_at, deleted_at
             FROM branches
             """;
 
     private static final String SELECT_WITH_BUSINESS = """
             SELECT b.id, b.business_id, b.name, b.address, b.latitude, b.longitude, b.phone_number,
                    b.country_code, b.region, b.city, b.postal_code, b.timezone,
-                   b.is_active, b.sort_order, b.created_at, b.updated_at, b.deleted_at,
+                   b.is_active, b.is_implicit, b.sort_order, b.created_at, b.updated_at, b.deleted_at,
                    biz.id AS biz_id, biz.organization_id AS biz_organization_id, biz.name AS biz_name,
                    biz.slug AS biz_slug, biz.description AS biz_description, biz.status AS biz_status,
+                   biz.publish_status AS biz_publish_status,
                    biz.is_verified AS biz_verified, biz.rating_avg AS biz_rating_avg,
                    biz.primary_category_id AS biz_primary_category_id,
                    org.default_currency AS biz_currency, org.country_code AS biz_country_code,
@@ -66,9 +67,11 @@ public class BranchRepository {
             branch.onCreate();
             Long id = jdbc.insert("""
                     INSERT INTO branches (business_id, name, address, latitude, longitude, phone_number, country_code,
-                                          region, city, postal_code, timezone, is_active, sort_order, created_at, updated_at)
+                                          region, city, postal_code, timezone, is_active, is_implicit, sort_order,
+                                          created_at, updated_at)
                     VALUES (:businessId, :name, :address, :latitude, :longitude, :phoneNumber, :countryCode,
-                            :region, :city, :postalCode, :timezone, :active, :sortOrder, :createdAt, :updatedAt)
+                            :region, :city, :postalCode, :timezone, :active, :implicit, :sortOrder,
+                            :createdAt, :updatedAt)
                     """, bind(branch));
             branch.setId(id);
             return branch;
@@ -78,6 +81,7 @@ public class BranchRepository {
                 UPDATE branches SET business_id = :businessId, name = :name, address = :address, latitude = :latitude,
                     longitude = :longitude, phone_number = :phoneNumber, country_code = :countryCode, region = :region,
                     city = :city, postal_code = :postalCode, timezone = :timezone, is_active = :active,
+                    is_implicit = :implicit,
                     sort_order = :sortOrder, updated_at = :updatedAt
                 WHERE id = :id
                 """, bind(branch).addValue("id", branch.getId()));
@@ -92,6 +96,16 @@ public class BranchRepository {
     public List<Branch> findByBusiness(Business business) {
         return jdbc.findList(SELECT + " WHERE business_id = :businessId AND deleted_at IS NULL ORDER BY sort_order, id",
                 jdbc.params().addValue("businessId", business.getId()), rows.branch);
+    }
+
+    public List<Branch> findByBusinessIds(List<Long> businessIds) {
+        if (businessIds == null || businessIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.findList(SELECT + """
+                 WHERE business_id IN (:ids) AND deleted_at IS NULL
+                 ORDER BY business_id, sort_order, id
+                """, jdbc.params().addValue("ids", businessIds), rows.branch);
     }
 
     public long countByOrganizationId(Long orgId) {
@@ -126,6 +140,7 @@ public class BranchRepository {
                   AND b.deleted_at IS NULL
                   AND biz.deleted_at IS NULL
                   AND biz.status = 'APPROVED'
+                  AND biz.publish_status = 'PUBLISHED'
                   AND (
                     6371000 * acos(
                       LEAST(1.0, GREATEST(-1.0,
@@ -163,6 +178,7 @@ public class BranchRepository {
         business.setDescription(rs.getString("biz_description"));
         String status = rs.getString("biz_status");
         business.setStatus(status == null ? null : BusinessStatus.valueOf(status));
+        business.setPublishStatus(JdbcSupport.optionalString(rs, "biz_publish_status"));
         business.setVerified(rs.getBoolean("biz_verified"));
         BigDecimal ratingAvg = JdbcSupport.getDecimal(rs, "biz_rating_avg");
         business.setRatingAvg(ratingAvg == null ? BigDecimal.ZERO : ratingAvg);
@@ -194,6 +210,7 @@ public class BranchRepository {
                 .addValue("postalCode", branch.getPostalCode())
                 .addValue("timezone", branch.getTimezone())
                 .addValue("active", branch.isActive())
+                .addValue("implicit", branch.isImplicit())
                 .addValue("sortOrder", branch.getSortOrder())
                 .addValue("createdAt", JdbcSupport.ts(branch.getCreatedAt()))
                 .addValue("updatedAt", JdbcSupport.ts(branch.getUpdatedAt()));

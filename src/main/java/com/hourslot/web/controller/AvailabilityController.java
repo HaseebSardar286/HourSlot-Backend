@@ -4,7 +4,9 @@ import com.hourslot.booking.model.Booking;
 import com.hourslot.booking.repository.BookingRepository;
 import com.hourslot.booking.model.BookingStatus;
 import com.hourslot.organization.model.Branch;
+import com.hourslot.organization.model.Business;
 import com.hourslot.organization.repository.BranchRepository;
+import com.hourslot.organization.repository.BusinessRepository;
 import com.hourslot.availability.repository.BranchWorkingHourRepository;
 import com.hourslot.catalog.services.PricingService;
 import com.hourslot.availability.services.ScheduleService;
@@ -55,6 +57,9 @@ public class AvailabilityController {
 
     @Autowired
     private PricingService pricingService;
+
+    @Autowired
+    private BusinessRepository businessRepository;
 
     @Autowired
     private BranchWorkingHourRepository branchWorkingHourRepository;
@@ -236,6 +241,8 @@ public class AvailabilityController {
         LocalTime slotTime = shiftStart;
         int serviceDuration = service.getDurationMinutes() > 0 ? service.getDurationMinutes() : 30;
         int serviceBuffer = Math.max(0, service.getBufferMinutes());
+        int travelBuffer = travelBufferMinutes(branchId, service);
+        int occupancyBuffer = serviceBuffer + travelBuffer;
         int step = slotStepMinutes > 0 ? slotStepMinutes : 30;
         List<TimeOfDayPricing> dayRules = pricingService.rulesFor(service, localDate.getDayOfWeek().getValue());
         BigDecimal unitPrice = pricingService.unitPrice(service, staff);
@@ -262,8 +269,8 @@ public class AvailabilityController {
             boolean overlapsBooking = false;
             for (Booking booking : bookings) {
                 LocalTime bookingStart = booking.getBookingTime().toLocalTime();
-                LocalTime bookingEndWithBuffer = booking.getEndTime().toLocalTime().plusMinutes(serviceBuffer);
-                LocalTime slotEndWithBuffer = slotEnd.plusMinutes(serviceBuffer);
+                LocalTime bookingEndWithBuffer = booking.getEndTime().toLocalTime().plusMinutes(occupancyBuffer);
+                LocalTime slotEndWithBuffer = slotEnd.plusMinutes(occupancyBuffer);
                 if (slotStart.isBefore(bookingEndWithBuffer) && slotEndWithBuffer.isAfter(bookingStart)) {
                     overlapsBooking = true;
                     break;
@@ -295,6 +302,27 @@ public class AvailabilityController {
         }
 
         return slots;
+    }
+
+    private int travelBufferMinutes(Long branchId, Service service) {
+        boolean home = service.isAllowsHomeService()
+                || "CUSTOMER_LOCATION".equalsIgnoreCase(service.getServiceMode())
+                || "HYBRID".equalsIgnoreCase(service.getServiceMode())
+                || "BOTH".equalsIgnoreCase(service.getServiceMode());
+        if (!home) {
+            return 0;
+        }
+        return branchRepository.findById(branchId)
+                .map(branch -> {
+                    Long businessId = branch.getBusiness() == null ? null : branch.getBusiness().getId();
+                    if (businessId == null) {
+                        return 0;
+                    }
+                    return businessRepository.findById(businessId)
+                            .map(Business::getTravelBufferMinutes)
+                            .orElse(0);
+                })
+                .orElse(0);
     }
 
     @GetMapping("/branches/{branchId}/working-hours")
