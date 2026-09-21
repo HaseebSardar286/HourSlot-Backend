@@ -50,12 +50,21 @@ public class GeoAreaRepository {
     }
 
     public List<GeoArea> findActiveByCity(String countryCode, String city) {
-        return jdbc.findList(SELECT + """
-                 WHERE status = 'ACTIVE' AND deleted_at IS NULL
-                   AND (:countryCode IS NULL OR UPPER(country_code) = UPPER(:countryCode))
-                   AND (:city IS NULL OR LOWER(city) = LOWER(:city))
-                 ORDER BY name
-                """, jdbc.params().addValue("countryCode", countryCode).addValue("city", city), rows.geoArea);
+        // Build filters only when present. PostgreSQL rejects untyped NULL binds in
+        // "(:param IS NULL OR ...)" via JDBC ("could not determine data type of parameter").
+        StringBuilder sql = new StringBuilder(SELECT);
+        sql.append(" WHERE status = 'ACTIVE' AND deleted_at IS NULL");
+        var params = jdbc.params();
+        if (countryCode != null && !countryCode.isBlank()) {
+            sql.append(" AND UPPER(country_code) = UPPER(:countryCode)");
+            params.addValue("countryCode", countryCode.trim());
+        }
+        if (city != null && !city.isBlank()) {
+            sql.append(" AND LOWER(city) = LOWER(:city)");
+            params.addValue("city", city.trim());
+        }
+        sql.append(" ORDER BY name");
+        return jdbc.findList(sql.toString(), params, rows.geoArea);
     }
 
     public GeoArea save(GeoArea area) {
