@@ -14,7 +14,7 @@ public class UserRepository {
 
     private static final String SELECT = """
             SELECT id, email, password_hash, phone_number, status, email_verified_at, locale, timezone,
-                   last_login_at, first_name, last_name, created_at, updated_at, deleted_at
+                   last_login_at, first_name, last_name, provider_intent, created_at, updated_at, deleted_at
             FROM users
             """;
 
@@ -58,9 +58,9 @@ public class UserRepository {
             user.onCreate();
             Long id = jdbc.insert("""
                     INSERT INTO users (email, password_hash, phone_number, status, email_verified_at, locale, timezone,
-                                       last_login_at, first_name, last_name, created_at, updated_at)
+                                       last_login_at, first_name, last_name, provider_intent, created_at, updated_at)
                     VALUES (:email, :passwordHash, :phoneNumber, :status, :emailVerifiedAt, :locale, :timezone,
-                            :lastLoginAt, :firstName, :lastName, :createdAt, :updatedAt)
+                            :lastLoginAt, :firstName, :lastName, :providerIntent, :createdAt, :updatedAt)
                     """, bind(user));
             user.setId(id);
             return user;
@@ -69,7 +69,8 @@ public class UserRepository {
         jdbc.update("""
                 UPDATE users SET email = :email, password_hash = :passwordHash, phone_number = :phoneNumber,
                     status = :status, email_verified_at = :emailVerifiedAt, locale = :locale, timezone = :timezone,
-                    last_login_at = :lastLoginAt, first_name = :firstName, last_name = :lastName, updated_at = :updatedAt
+                    last_login_at = :lastLoginAt, first_name = :firstName, last_name = :lastName,
+                    provider_intent = :providerIntent, updated_at = :updatedAt
                 WHERE id = :id
                 """, bind(user).addValue("id", user.getId()));
         return user;
@@ -92,6 +93,7 @@ public class UserRepository {
                 .addValue("lastLoginAt", JdbcSupport.ts(user.getLastLoginAt()))
                 .addValue("firstName", user.getFirstName())
                 .addValue("lastName", user.getLastName())
+                .addValue("providerIntent", user.getProviderIntent())
                 .addValue("createdAt", JdbcSupport.ts(user.getCreatedAt()))
                 .addValue("updatedAt", JdbcSupport.ts(user.getUpdatedAt()));
     }

@@ -32,6 +32,7 @@ public class DiscoverBranchResponse {
         private String listingMode;
         private String serviceMode;
         private String opsStatus;
+        private Boolean isOnline;
         private CategorySummary primaryCategory;
         private double rating;
     }

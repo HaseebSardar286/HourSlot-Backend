@@ -8,6 +8,7 @@ import com.hourslot.organization.model.Organization;
 import com.hourslot.organization.model.OrganizationMember;
 import com.hourslot.organization.model.Staff;
 import com.hourslot.identity.model.User;
+import com.hourslot.identity.repository.UserRepository;
 import com.hourslot.organization.repository.BranchRepository;
 import com.hourslot.organization.repository.BusinessRepository;
 import com.hourslot.organization.repository.MemberRoleRepository;
@@ -31,6 +32,7 @@ public class TenancyService {
     private final BranchRepository branchRepository;
     private final StaffRepository staffRepository;
     private final MemberRoleRepository memberRoleRepository;
+    private final UserRepository userRepository;
     private final RbacService rbacService;
     private final EntitlementService entitlementService;
     private final SystemSettingService systemSettingService;
@@ -42,6 +44,7 @@ public class TenancyService {
             BranchRepository branchRepository,
             StaffRepository staffRepository,
             MemberRoleRepository memberRoleRepository,
+            UserRepository userRepository,
             RbacService rbacService,
             EntitlementService entitlementService,
             SystemSettingService systemSettingService) {
@@ -51,6 +54,7 @@ public class TenancyService {
         this.branchRepository = branchRepository;
         this.staffRepository = staffRepository;
         this.memberRoleRepository = memberRoleRepository;
+        this.userRepository = userRepository;
         this.rbacService = rbacService;
         this.entitlementService = entitlementService;
         this.systemSettingService = systemSettingService;
@@ -107,10 +111,18 @@ public class TenancyService {
             String city,
             String timezone,
             String currency) {
+        assertCanCreateIndividualListing(owner);
+
         Optional<Business> existing = findBusinessForUser(owner);
         if (existing.isPresent()) {
-            if ("INDIVIDUAL".equalsIgnoreCase(existing.get().getListingMode())) {
+            if ("INDIVIDUAL".equalsIgnoreCase(existing.get().getListingMode())
+                    && !isIndividualDisabled(existing.get())) {
                 return existing.get();
+            }
+            if ("INDIVIDUAL".equalsIgnoreCase(existing.get().getListingMode())
+                    && isIndividualDisabled(existing.get())) {
+                throw new IllegalStateException(
+                        "This individual listing is disabled because the account joined an organization.");
             }
             throw new IllegalStateException(
                     "This account already owns a business listing and cannot create an individual provider listing.");
@@ -166,7 +178,90 @@ public class TenancyService {
                 .designation("Provider")
                 .implicit(true)
                 .build());
+
+        if (!"INDIVIDUAL".equalsIgnoreCase(owner.getProviderIntent())) {
+            owner.setProviderIntent("INDIVIDUAL");
+            userRepository.save(owner);
+        }
         return business;
+    }
+
+    @Transactional(readOnly = true)
+    public void assertCanCreateIndividualListing(User user) {
+        Optional<Business> existing = findBusinessForUser(user);
+        if (existing.isPresent()) {
+            Business business = existing.get();
+            if ("INDIVIDUAL".equalsIgnoreCase(business.getListingMode())) {
+                if (isIndividualDisabled(business)) {
+                    throw new IllegalStateException(
+                            "Individual listing is disabled while attached to an organization.");
+                }
+                return;
+            }
+            throw new IllegalStateException(
+                    "Organization staff and business owners cannot create an individual provider listing.");
+        }
+        // Staff of a non-individual business resolved via staff table
+        Optional<Staff> staff = staffRepository.findByUser(user);
+        if (staff.isPresent()) {
+            Business business = staff.get().getBranch() == null ? null : staff.get().getBranch().getBusiness();
+            if (business != null && !"INDIVIDUAL".equalsIgnoreCase(business.getListingMode())) {
+                throw new IllegalStateException(
+                        "Organization staff cannot create an individual provider listing.");
+            }
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public void assertCanCreateBusinessListing(User user) {
+        Optional<Business> existing = findBusinessForUser(user);
+        if (existing.isPresent()) {
+            Business business = existing.get();
+            if ("INDIVIDUAL".equalsIgnoreCase(business.getListingMode()) && !isIndividualDisabled(business)) {
+                throw new IllegalStateException(
+                        "An active individual listing must be disabled before registering a business.");
+            }
+            if (!"INDIVIDUAL".equalsIgnoreCase(business.getListingMode())) {
+                throw new IllegalStateException("You have already registered a business.");
+            }
+        }
+    }
+
+    public static boolean isIndividual(Business business) {
+        return business != null && "INDIVIDUAL".equalsIgnoreCase(business.getListingMode());
+    }
+
+    public static boolean isIndividualDisabled(Business business) {
+        return business != null
+                && business.getIndividualDisabledReason() != null
+                && !business.getIndividualDisabledReason().isBlank();
+    }
+
+    public void rejectBusinessOnlyForIndividual(Business business) {
+        if (isIndividual(business)) {
+            throw new IllegalStateException(
+                    "Individual providers must use the solo workspace (/api/provider). Business APIs are not available.");
+        }
+    }
+
+    /** Solo listing only — rejects missing or non-individual businesses. */
+    @Transactional(readOnly = true)
+    public Business requireIndividualProvider(User user) {
+        Business business = requireBusinessForUser(user);
+        if (!isIndividual(business)) {
+            throw new IllegalStateException(
+                    "This endpoint is only available for individual provider listings.");
+        }
+        if (isIndividualDisabled(business)) {
+            throw new IllegalStateException(
+                    "This individual listing is disabled while attached to an organization.");
+        }
+        return business;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Business> findIndividualProvider(User user) {
+        return findBusinessForUser(user).filter(TenancyService::isIndividual);
     }
 
     @Transactional(readOnly = true)

@@ -98,8 +98,6 @@ public class CategoryController {
 
     @GetMapping("/public/categories")
     public ResponseEntity<List<Category>> getCategoriesHierarchy() {
-        // Return only root-level categories. Their subcategories are fetched eagerly/lazily via JPA
-        List<Category> roots = categoryRepository.findByParentIsNullAndActiveTrue();
-        return ResponseEntity.ok(roots);
+        return ResponseEntity.ok(categoryRepository.findActiveHierarchy());
     }
 }

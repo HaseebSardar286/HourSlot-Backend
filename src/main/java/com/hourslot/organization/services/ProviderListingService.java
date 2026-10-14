@@ -67,6 +67,21 @@ public class ProviderListingService {
             Integer yearsExperience,
             String phone,
             Long primaryCategoryId) {
+        return updateProfile(business, name, slug, description, serviceMode, yearsExperience, phone,
+                primaryCategoryId, null);
+    }
+
+    @Transactional
+    public Business updateProfile(
+            Business business,
+            String name,
+            String slug,
+            String description,
+            String serviceMode,
+            Integer yearsExperience,
+            String phone,
+            Long primaryCategoryId,
+            String onboardingState) {
         if (name != null && !name.isBlank()) {
             business.setName(name.trim());
         }
@@ -94,6 +109,9 @@ public class ProviderListingService {
                     .orElseThrow(() -> new IllegalArgumentException("Primary category not found."));
             business.setPrimaryCategory(category);
         }
+        if (onboardingState != null && !onboardingState.isBlank()) {
+            business.setOnboardingState(onboardingState.trim().toUpperCase(Locale.ROOT));
+        }
         return businessRepository.save(business);
     }
 
@@ -118,6 +136,8 @@ public class ProviderListingService {
         Business business = businessRepository.findBySlug(slug)
                 .filter(b -> b.getStatus() == BusinessStatus.APPROVED)
                 .filter(b -> "PUBLISHED".equalsIgnoreCase(b.getPublishStatus()))
+                .filter(b -> b.getIndividualDisabledReason() == null
+                        || b.getIndividualDisabledReason().isBlank())
                 .orElseThrow(() -> new RuntimeException("Provider not found."));
         return assemblePublicMap(business);
     }
@@ -137,6 +157,12 @@ public class ProviderListingService {
         result.put("rating", business.getRating());
         result.put("logoUrl", business.getLogoUrl());
         result.put("galleryUrls", business.getGalleryUrls());
+        result.put("opsStatus", business.getOpsStatus());
+        boolean online = business.isOnline()
+                && business.getLastSeenAt() != null
+                && business.getLastSeenAt().isAfter(java.time.LocalDateTime.now().minusMinutes(
+                        ProviderPresenceService.IDLE_TIMEOUT_MINUTES));
+        result.put("isOnline", online);
         result.put("category", business.getPrimaryCategory());
         result.put("services", serviceRepository.findByBusiness(business).stream()
                 .filter(com.hourslot.catalog.model.Service::isActive)

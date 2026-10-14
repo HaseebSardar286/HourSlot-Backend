@@ -1,19 +1,27 @@
 package com.hourslot.identity.dto;
 
-import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+
 import java.util.List;
 
 @Data
-@AllArgsConstructor
+@Builder
 public class LoginResponse {
     private String token;
     private String refreshToken;
-    private final String type = "Bearer";
+    @Builder.Default
+    private String type = "Bearer";
     private Long id;
     private String email;
     private String role;
     private String firstName;
     private String lastName;
     private List<String> authorities;
+    private String listingMode;
+    private String providerType;
+    private String providerIntent;
+    private String onboardingState;
+    private Boolean providerWorkspace;
+    private Boolean isOnline;
 }

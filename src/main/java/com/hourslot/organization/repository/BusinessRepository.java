@@ -53,12 +53,16 @@ public class BusinessRepository {
                                             rejection_reason, registration_number, primary_category_id, rating_avg,
                                             rating_count, timezone, locale, listing_mode, provider_type, service_mode,
                                             publish_status, onboarding_state, years_experience, travel_buffer_minutes,
-                                            ops_status, phone, settings, created_at, updated_at)
+                                            ops_status, is_online, last_seen_at, last_latitude, last_longitude,
+                                            presence_source, individual_disabled_reason, phone, settings,
+                                            created_at, updated_at)
                     VALUES (:organizationId, :name, :slug, :description, :status, :verified,
                             :rejectionReason, :registrationNumber, :primaryCategoryId, :ratingAvg,
                             :ratingCount, :timezone, :locale, :listingMode, :providerType, :serviceMode,
                             :publishStatus, :onboardingState, :yearsExperience, :travelBufferMinutes,
-                            :opsStatus, :phone, :settings, :createdAt, :updatedAt)
+                            :opsStatus, :online, :lastSeenAt, :lastLatitude, :lastLongitude,
+                            :presenceSource, :individualDisabledReason, :phone, :settings,
+                            :createdAt, :updatedAt)
                     """, bind(business));
             business.setId(id);
         } else {
@@ -72,7 +76,10 @@ public class BusinessRepository {
                         provider_type = :providerType, service_mode = :serviceMode,
                         publish_status = :publishStatus, onboarding_state = :onboardingState,
                         years_experience = :yearsExperience, travel_buffer_minutes = :travelBufferMinutes,
-                        ops_status = :opsStatus, phone = :phone, settings = :settings, updated_at = :updatedAt
+                        ops_status = :opsStatus, is_online = :online, last_seen_at = :lastSeenAt,
+                        last_latitude = :lastLatitude, last_longitude = :lastLongitude,
+                        presence_source = :presenceSource, individual_disabled_reason = :individualDisabledReason,
+                        phone = :phone, settings = :settings, updated_at = :updatedAt
                     WHERE id = :id
                     """, bind(business).addValue("id", business.getId()));
         }
@@ -252,6 +259,12 @@ public class BusinessRepository {
                 .addValue("yearsExperience", business.getYearsExperience())
                 .addValue("travelBufferMinutes", business.getTravelBufferMinutes())
                 .addValue("opsStatus", business.getOpsStatus() == null ? "AVAILABLE" : business.getOpsStatus())
+                .addValue("online", business.isOnline())
+                .addValue("lastSeenAt", JdbcSupport.ts(business.getLastSeenAt()))
+                .addValue("lastLatitude", business.getLastLatitude())
+                .addValue("lastLongitude", business.getLastLongitude())
+                .addValue("presenceSource", business.getPresenceSource())
+                .addValue("individualDisabledReason", business.getIndividualDisabledReason())
                 .addValue("phone", business.getPhone())
                 .addValue("settings", jdbc.jsonb(business.getSettings()))
                 .addValue("createdAt", JdbcSupport.ts(business.getCreatedAt()))

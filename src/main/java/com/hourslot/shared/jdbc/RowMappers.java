@@ -164,6 +164,7 @@ public class RowMappers {
         user.setLastLoginAt(JdbcSupport.localDateTime(rs, p + "last_login_at"));
         user.setFirstName(rs.getString(p + "first_name"));
         user.setLastName(rs.getString(p + "last_name"));
+        user.setProviderIntent(JdbcSupport.optionalString(rs, p + "provider_intent"));
         user.setCreatedAt(JdbcSupport.localDateTime(rs, p + "created_at"));
         user.setUpdatedAt(JdbcSupport.localDateTime(rs, p + "updated_at"));
         user.setDeletedAt(JdbcSupport.localDateTime(rs, p + "deleted_at"));
@@ -247,6 +248,17 @@ public class RowMappers {
         business.setPhone(JdbcSupport.optionalString(rs, "phone"));
         String ops = JdbcSupport.optionalString(rs, "ops_status");
         business.setOpsStatus(ops == null || ops.isBlank() ? "AVAILABLE" : ops);
+        try {
+            Boolean online = JdbcSupport.getBoolean(rs, "is_online");
+            business.setOnline(online != null && online);
+            business.setLastSeenAt(JdbcSupport.localDateTime(rs, "last_seen_at"));
+            business.setLastLatitude(JdbcSupport.getDouble(rs, "last_latitude"));
+            business.setLastLongitude(JdbcSupport.getDouble(rs, "last_longitude"));
+            business.setPresenceSource(JdbcSupport.optionalString(rs, "presence_source"));
+            business.setIndividualDisabledReason(JdbcSupport.optionalString(rs, "individual_disabled_reason"));
+        } catch (SQLException ignored) {
+            // optional columns before V18
+        }
         business.setSettings(jdbc.readJsonb(rs, "settings"));
         try {
             business.setLogoUrl(rs.getString("logo_url"));

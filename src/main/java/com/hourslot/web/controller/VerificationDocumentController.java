@@ -51,9 +51,13 @@ public class VerificationDocumentController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("documents", docs);
         body.put("readiness", verificationDocumentService.readiness(business));
-        body.put("requiredTypes", verificationDocumentService.requiredTypeCatalog());
-        body.put("tier1Types", verificationDocumentService.tier1Catalog());
-        body.put("tier2Types", verificationDocumentService.tier2Catalog());
+        List<Map<String, Object>> tier1 = verificationDocumentService.tier1CatalogFor(business);
+        List<Map<String, Object>> tier2 = verificationDocumentService.tier2Catalog();
+        List<Map<String, Object>> all = new java.util.ArrayList<>(tier1);
+        all.addAll(tier2);
+        body.put("requiredTypes", all);
+        body.put("tier1Types", tier1);
+        body.put("tier2Types", tier2);
         return ResponseEntity.ok(body);
     }
 

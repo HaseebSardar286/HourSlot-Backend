@@ -157,6 +157,11 @@ public class JdbcSupport {
         return rs.wasNull() ? null : value;
     }
 
+    public static Boolean getBoolean(ResultSet rs, String column) throws SQLException {
+        boolean value = rs.getBoolean(column);
+        return rs.wasNull() ? null : value;
+    }
+
     public static BigDecimal getDecimal(ResultSet rs, String column) throws SQLException {
         return rs.getBigDecimal(column);
     }

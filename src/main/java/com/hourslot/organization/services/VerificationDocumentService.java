@@ -28,6 +28,11 @@ import com.hourslot.media.services.ObjectStorageService;
 @Service
 public class VerificationDocumentService {
 
+    /** Tier 1 for individual professionals — identity only. */
+    public static final List<String> INDIVIDUAL_TIER1_TYPES = List.of(
+            BusinessVerificationDocument.OWNER_GOVERNMENT_ID
+    );
+
     /** Tier 1 — unlocks listing (Approve) after admin review. */
     public static final List<String> TIER1_TYPES = List.of(
             BusinessVerificationDocument.OWNER_GOVERNMENT_ID,
@@ -133,6 +138,17 @@ public class VerificationDocumentService {
         return typeCatalog(TIER1_TYPES);
     }
 
+    public List<Map<String, Object>> tier1CatalogFor(Business business) {
+        return typeCatalog(tier1TypesFor(business));
+    }
+
+    public List<String> tier1TypesFor(Business business) {
+        if (business != null && "INDIVIDUAL".equalsIgnoreCase(business.getListingMode())) {
+            return INDIVIDUAL_TIER1_TYPES;
+        }
+        return TIER1_TYPES;
+    }
+
     public List<Map<String, Object>> tier2Catalog() {
         return typeCatalog(TIER2_TYPES);
     }
@@ -146,34 +162,34 @@ public class VerificationDocumentService {
     public Map<String, Object> readiness(Business business) {
         List<BusinessVerificationDocument> docs = list(business);
         Map<String, BusinessVerificationDocument> byType = latestByType(docs);
+        List<String> tier1 = tier1TypesFor(business);
 
-        long tier1Approved = countApproved(TIER1_TYPES, byType);
+        long tier1Approved = countApproved(tier1, byType);
         long tier2Approved = countApproved(TIER2_TYPES, byType);
-        boolean readyForListing = tier1Approved == TIER1_TYPES.size();
+        boolean readyForListing = tier1Approved == tier1.size();
         boolean readyForVerifiedBadge = tier2Approved == TIER2_TYPES.size();
 
         Map<String, Object> result = new LinkedHashMap<>();
-        long tier1Submitted = TIER1_TYPES.stream().filter(byType::containsKey).count();
+        long tier1Submitted = tier1.stream().filter(byType::containsKey).count();
         long tier2Submitted = TIER2_TYPES.stream().filter(byType::containsKey).count();
 
-        result.put("tier1RequiredCount", TIER1_TYPES.size());
+        result.put("tier1RequiredCount", tier1.size());
         result.put("tier1ApprovedCount", tier1Approved);
         result.put("tier1SubmittedCount", tier1Submitted);
         result.put("tier2RequiredCount", TIER2_TYPES.size());
         result.put("tier2ApprovedCount", tier2Approved);
         result.put("tier2SubmittedCount", tier2Submitted);
-        result.put("requiredCount", TIER1_TYPES.size() + TIER2_TYPES.size());
+        result.put("requiredCount", tier1.size() + TIER2_TYPES.size());
         result.put("approvedCount", tier1Approved + tier2Approved);
         result.put("submittedCount", byType.size());
         result.put("readyForListing", readyForListing);
         result.put("readyForVerifiedBadge", readyForVerifiedBadge);
-        result.put("missingTier1Types", missingApproved(TIER1_TYPES, byType));
+        result.put("missingTier1Types", missingApproved(tier1, byType));
         result.put("missingTier2Types", missingApproved(TIER2_TYPES, byType));
-        result.put("missingTypes", missingApproved(
-                List.of(TIER1_TYPES.get(0), TIER1_TYPES.get(1), TIER1_TYPES.get(2),
-                        TIER2_TYPES.get(0), TIER2_TYPES.get(1)),
-                byType));
-        result.put("tier1Types", tier1Catalog());
+        List<String> allRequired = new ArrayList<>(tier1);
+        allRequired.addAll(TIER2_TYPES);
+        result.put("missingTypes", missingApproved(allRequired, byType));
+        result.put("tier1Types", tier1CatalogFor(business));
         result.put("tier2Types", tier2Catalog());
         return result;
     }
@@ -240,6 +256,10 @@ public class VerificationDocumentService {
     public void requireReadyForListing(Business business) {
         Map<String, Object> readiness = readiness(business);
         if (!Boolean.TRUE.equals(readiness.get("readyForListing"))) {
+            if (business != null && "INDIVIDUAL".equalsIgnoreCase(business.getListingMode())) {
+                throw new IllegalStateException(
+                        "Listing approval requires an approved government ID.");
+            }
             throw new IllegalStateException(
                     "Listing approval requires approved Owner ID, Trade license, and Address proof.");
         }

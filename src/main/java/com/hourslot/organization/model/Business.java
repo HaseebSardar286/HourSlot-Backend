@@ -84,6 +84,21 @@ public class Business {
     @Builder.Default
     private String opsStatus = "AVAILABLE";
 
+    @Builder.Default
+    private boolean online = false;
+
+    private LocalDateTime lastSeenAt;
+
+    private Double lastLatitude;
+
+    private Double lastLongitude;
+
+    /** LOGIN | HEARTBEAT | MANUAL_OFFLINE | LOGOUT | TIMEOUT */
+    private String presenceSource;
+
+    /** e.g. JOINED_ORG — retains listing while blocking independent operation. */
+    private String individualDisabledReason;
+
     private String phone;
 
     private Map<String, Object> settings;

@@ -7,7 +7,9 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Repository
@@ -64,6 +66,36 @@ public class CategoryRepository {
     public List<Category> findByParentIsNullAndActiveTrue() {
         return jdbc.findList(SELECT + " WHERE parent_id IS NULL AND is_active = TRUE ORDER BY sort_order, id",
                 jdbc.params(), rows.category);
+    }
+
+    /**
+     * Active roots with nested active subcategories for registration / discover UIs.
+     */
+    public List<Category> findActiveHierarchy() {
+        List<Category> all = findByActiveTrue();
+        Map<Long, Category> byId = new LinkedHashMap<>();
+        for (Category category : all) {
+            category.setSubcategories(new ArrayList<>());
+            if (category.getId() != null) {
+                byId.put(category.getId(), category);
+            }
+        }
+
+        List<Category> roots = new ArrayList<>();
+        for (Category category : all) {
+            Long parentId = category.getParent() == null ? null : category.getParent().getId();
+            if (parentId == null) {
+                roots.add(category);
+                continue;
+            }
+            Category parent = byId.get(parentId);
+            if (parent != null) {
+                parent.getSubcategories().add(category);
+            } else {
+                roots.add(category);
+            }
+        }
+        return roots;
     }
 
     public Optional<Category> findBySlug(String slug) {

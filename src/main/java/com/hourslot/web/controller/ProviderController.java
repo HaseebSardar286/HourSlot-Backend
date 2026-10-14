@@ -9,6 +9,7 @@ import com.hourslot.organization.model.BusinessServiceArea;
 import com.hourslot.organization.services.AuditService;
 import com.hourslot.organization.services.FeatureFlagService;
 import com.hourslot.organization.services.ProviderListingService;
+import com.hourslot.organization.services.ProviderPresenceService;
 import com.hourslot.organization.services.ServiceAreaService;
 import com.hourslot.organization.services.TenancyService;
 import lombok.Data;
@@ -26,6 +27,7 @@ public class ProviderController {
     private final ProviderListingService providerListingService;
     private final ServiceAreaService serviceAreaService;
     private final AuditService auditService;
+    private final ProviderPresenceService providerPresenceService;
 
     public ProviderController(
             UserRepository userRepository,
@@ -33,13 +35,15 @@ public class ProviderController {
             FeatureFlagService featureFlagService,
             ProviderListingService providerListingService,
             ServiceAreaService serviceAreaService,
-            AuditService auditService) {
+            AuditService auditService,
+            ProviderPresenceService providerPresenceService) {
         this.userRepository = userRepository;
         this.tenancyService = tenancyService;
         this.featureFlagService = featureFlagService;
         this.providerListingService = providerListingService;
         this.serviceAreaService = serviceAreaService;
         this.auditService = auditService;
+        this.providerPresenceService = providerPresenceService;
     }
 
     @Data
@@ -61,6 +65,7 @@ public class ProviderController {
         private Integer yearsExperience;
         private String phone;
         private Long primaryCategoryId;
+        private String onboardingState;
     }
 
     @Data
@@ -72,6 +77,14 @@ public class ProviderController {
         private Double longitude;
         private BigDecimal radiusKm;
         private String status;
+    }
+
+    @Data
+    public static class PresenceRequest {
+        private Boolean online;
+        private Double latitude;
+        private Double longitude;
+        private String source;
     }
 
     @PostMapping("/api/provider/individual")
@@ -101,7 +114,7 @@ public class ProviderController {
         return ResponseEntity.ok(providerListingService.updateProfile(
                 requireBusiness(userDetails), request.getName(), request.getSlug(), request.getBio(),
                 request.getServiceMode(), request.getYearsExperience(), request.getPhone(),
-                request.getPrimaryCategoryId()));
+                request.getPrimaryCategoryId(), request.getOnboardingState()));
     }
 
     @GetMapping("/api/provider/service-areas")
@@ -135,7 +148,12 @@ public class ProviderController {
     @PostMapping("/api/provider/publish")
     public ResponseEntity<?> publish(@AuthenticationPrincipal CustomUserDetails userDetails) {
         User user = requireUser(userDetails);
-        Business business = providerListingService.publish(requireBusiness(userDetails));
+        Business business = requireBusiness(userDetails);
+        if (TenancyService.isIndividualDisabled(business)) {
+            return ResponseEntity.status(403).body(java.util.Map.of(
+                    "message", "Disabled individual listings cannot be published."));
+        }
+        business = providerListingService.publish(business);
         auditService.log(user, business, "PUBLISH_PROVIDER", "Business", business.getId(), business.getSlug());
         return ResponseEntity.ok(business);
     }
@@ -143,6 +161,23 @@ public class ProviderController {
     @PostMapping("/api/provider/unpublish")
     public ResponseEntity<?> unpublish(@AuthenticationPrincipal CustomUserDetails userDetails) {
         return ResponseEntity.ok(providerListingService.unpublish(requireBusiness(userDetails)));
+    }
+
+    @GetMapping("/api/provider/presence")
+    public ResponseEntity<?> getPresence(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        Business business = requireBusiness(userDetails);
+        providerPresenceService.markOfflineIfStale(business);
+        return ResponseEntity.ok(providerPresenceService.snapshot(business));
+    }
+
+    @PostMapping("/api/provider/presence")
+    public ResponseEntity<?> updatePresence(
+            @RequestBody PresenceRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Business business = requireBusiness(userDetails);
+        boolean online = request.getOnline() == null || Boolean.TRUE.equals(request.getOnline());
+        return ResponseEntity.ok(providerPresenceService.updatePresence(
+                business, online, request.getLatitude(), request.getLongitude(), request.getSource()));
     }
 
     @GetMapping("/api/providers/{slug}")
@@ -155,7 +190,7 @@ public class ProviderController {
     }
 
     private Business requireBusiness(CustomUserDetails userDetails) {
-        return tenancyService.requireBusinessForUser(requireUser(userDetails));
+        return tenancyService.requireIndividualProvider(requireUser(userDetails));
     }
 
     private static BusinessServiceArea toArea(ServiceAreaRequest request) {

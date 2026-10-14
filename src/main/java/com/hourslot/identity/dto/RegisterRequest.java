@@ -16,16 +16,39 @@ public class RegisterRequest {
     @Size(min = 6, max = 40)
     private String password;
 
-    private String role; // CUSTOMER, BUSINESS_ADMIN, etc. Defaults to CUSTOMER
+    /** CUSTOMER | BUSINESS_OWNER — legacy; prefer accountType. */
+    private String role;
+
+    /**
+     * CUSTOMER | INDIVIDUAL | BUSINESS.
+     * INDIVIDUAL creates a customer dual-identity account with providerIntent=INDIVIDUAL.
+     */
+    private String accountType;
 
     private String firstName;
     private String lastName;
     private String phoneNumber;
 
-    // Optional business onboarding fields (used when role = BUSINESS_OWNER)
+    // Business onboarding (accountType = BUSINESS)
     private String businessName;
     private String businessCategory;
     private String businessDescription;
     private String registrationNumber;
-}
+    private String branchName;
+    private String address;
+    private Double latitude;
+    private Double longitude;
 
+    // Individual listing (accountType = INDIVIDUAL)
+    private String displayName;
+    private String slug;
+    private String bio;
+    private String serviceMode;
+    private Integer yearsExperience;
+    private Long primaryCategoryId;
+    private String countryCode;
+    private String region;
+    private String city;
+    private String timezone;
+    private String currency;
+}

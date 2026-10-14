@@ -108,8 +108,7 @@ public class DiscoveryController {
 
     @GetMapping("/categories")
     public ResponseEntity<?> getCategories() {
-        List<Category> roots = categoryRepository.findByParentIsNullAndActiveTrue();
-        return ResponseEntity.ok(roots);
+        return ResponseEntity.ok(categoryRepository.findActiveHierarchy());
     }
 
     @GetMapping("/business/{id}")
@@ -309,7 +308,9 @@ public class DiscoveryController {
         Business business = branch.getBusiness();
         return business != null
                 && business.getStatus() == BusinessStatus.APPROVED
-                && "PUBLISHED".equalsIgnoreCase(business.getPublishStatus());
+                && "PUBLISHED".equalsIgnoreCase(business.getPublishStatus())
+                && (business.getIndividualDisabledReason() == null
+                        || business.getIndividualDisabledReason().isBlank());
     }
 
     private DiscoverBranchResponse toResponse(Branch branch, Double userLat, Double userLon) {
@@ -330,6 +331,11 @@ public class DiscoveryController {
             businessDto.setListingMode(business.getListingMode());
             businessDto.setServiceMode(business.getServiceMode());
             businessDto.setOpsStatus(business.getOpsStatus());
+            boolean online = business.isOnline()
+                    && business.getLastSeenAt() != null
+                    && business.getLastSeenAt().isAfter(java.time.LocalDateTime.now().minusMinutes(
+                            com.hourslot.organization.services.ProviderPresenceService.IDLE_TIMEOUT_MINUTES));
+            businessDto.setIsOnline(online);
             businessDto.setRating(business.getRating());
             businessDto.setPrimaryCategory(toCategorySummary(business.getPrimaryCategory()));
         }

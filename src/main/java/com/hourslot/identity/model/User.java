@@ -41,6 +41,9 @@ public class User {
 
     private String lastName;
 
+    /** CUSTOMER | INDIVIDUAL | BUSINESS — signup intent; null for legacy users. */
+    private String providerIntent;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

@@ -162,6 +162,15 @@ public class BookingRepository {
         return bookings;
     }
 
+    public List<Booking> findByBusinessOrderByBookingTimeDesc(Long businessId) {
+        List<Booking> bookings = findBookings(SELECT + """
+                 WHERE business_id = :businessId AND deleted_at IS NULL
+                 ORDER BY booking_time DESC
+                """, jdbc.params().addValue("businessId", businessId));
+        attachDetails(bookings);
+        return bookings;
+    }
+
     public List<Booking> findConfirmedBetween(LocalDateTime start, LocalDateTime end) {
         List<Booking> bookings = findBookings(SELECT + """
                  WHERE deleted_at IS NULL

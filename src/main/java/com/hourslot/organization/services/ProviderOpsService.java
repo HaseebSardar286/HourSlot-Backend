@@ -5,6 +5,7 @@ import com.hourslot.booking.repository.BookingRepository;
 import com.hourslot.job.model.Job;
 import com.hourslot.job.services.JobService;
 import com.hourslot.organization.model.Business;
+import com.hourslot.organization.model.Organization;
 import com.hourslot.organization.repository.BusinessRepository;
 import com.hourslot.payment.repository.PaymentRepository;
 import com.hourslot.quote.model.Quote;
@@ -159,5 +160,55 @@ public class ProviderOpsService {
                 GROUP BY u.id, u.email, u.first_name, u.last_name, u.phone_number
                 ORDER BY last_booking_at DESC NULLS LAST
                 """, Map.of("businessId", business.getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Booking> bookings(Business business) {
+        return bookingRepository.findByBusinessOrderByBookingTimeDesc(business.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> workspace(Business business, int serviceCount, int areaCount, boolean verificationReady) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("listingMode", business.getListingMode());
+        result.put("providerType", business.getProviderType());
+        result.put("name", business.getName());
+        result.put("slug", business.getSlug());
+        result.put("status", business.getStatus() == null ? null : business.getStatus().name());
+        result.put("publishStatus", business.getPublishStatus());
+        result.put("onboardingState", business.getOnboardingState());
+        result.put("opsStatus", business.getOpsStatus());
+        result.put("serviceMode", business.getServiceMode());
+        result.put("isOnline", business.isOnline());
+        result.put("timezone", business.getTimezone());
+        result.put("phone", business.getPhone());
+        result.put("description", business.getDescription());
+        result.put("yearsExperience", business.getYearsExperience());
+        result.put("primaryCategoryId", business.getPrimaryCategory() == null ? null : business.getPrimaryCategory().getId());
+        Organization org = business.getOrganization();
+        if (org != null) {
+            result.put("defaultCurrency", org.getDefaultCurrency());
+            result.put("countryCode", org.getCountryCode());
+            result.put("region", org.getRegion());
+            result.put("city", org.getCity());
+            result.put("organizationId", org.getId());
+        }
+        boolean profileDone = business.getName() != null && !business.getName().isBlank()
+                && business.getDescription() != null && !business.getDescription().isBlank();
+        boolean published = "PUBLISHED".equalsIgnoreCase(business.getPublishStatus());
+        Map<String, Object> checklist = new LinkedHashMap<>();
+        checklist.put("profile", profileDone);
+        checklist.put("serviceAreas", areaCount > 0);
+        checklist.put("services", serviceCount > 0);
+        checklist.put("verification", verificationReady);
+        checklist.put("published", published);
+        result.put("checklist", checklist);
+        int done = 0;
+        for (Object v : checklist.values()) {
+            if (Boolean.TRUE.equals(v)) done++;
+        }
+        result.put("checklistComplete", done);
+        result.put("checklistTotal", checklist.size());
+        return result;
     }
 }

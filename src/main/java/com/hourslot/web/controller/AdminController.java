@@ -4,7 +4,6 @@ import com.hourslot.identity.dto.MessageResponse;
 import com.hourslot.organization.model.AuditEvent;
 import com.hourslot.organization.repository.AuditEventRepository;
 import com.hourslot.booking.model.Booking;
-import com.hourslot.booking.model.BookingItem;
 import com.hourslot.booking.repository.BookingRepository;
 import com.hourslot.booking.model.BookingStatus;
 import com.hourslot.organization.model.Branch;
@@ -14,19 +13,13 @@ import com.hourslot.organization.repository.BusinessRepository;
 import com.hourslot.organization.model.BusinessStatus;
 import com.hourslot.organization.model.BusinessVerificationDocument;
 import com.hourslot.organization.repository.BusinessVerificationDocumentRepository;
-import com.hourslot.catalog.model.Category;
-import com.hourslot.catalog.repository.CategoryRepository;
 import com.hourslot.identity.security.CustomUserDetails;
-import com.hourslot.identity.model.CustomerProfile;
 import com.hourslot.identity.repository.CustomerProfileRepository;
-import com.hourslot.media.services.MediaAssetService;
-import com.hourslot.organization.model.Organization;
 import com.hourslot.organization.services.RbacService;
 import com.hourslot.catalog.model.Service;
 import com.hourslot.catalog.repository.ServiceRepository;
 import com.hourslot.organization.model.Staff;
 import com.hourslot.organization.repository.StaffRepository;
-import com.hourslot.organization.model.SystemSetting;
 import com.hourslot.organization.services.SystemSettingService;
 import com.hourslot.organization.services.TenancyService;
 import com.hourslot.identity.model.User;
@@ -34,20 +27,12 @@ import com.hourslot.identity.repository.UserRepository;
 import com.hourslot.organization.services.VerificationDocumentService;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -83,9 +68,6 @@ public class AdminController {
     private RbacService rbacService;
 
     @Autowired
-    private MediaAssetService mediaAssetService;
-
-    @Autowired
     private VerificationDocumentService verificationDocumentService;
 
     @Autowired
@@ -101,16 +83,7 @@ public class AdminController {
     private StaffRepository staffRepository;
 
     @Autowired
-    private PasswordEncoder encoder;
-
-    @Autowired
-    private CategoryRepository categoryRepository;
-
-    @Autowired
-    private com.hourslot.geo.repository.GeoAreaRepository geoAreaRepository;
-
-    @Autowired
-    private com.hourslot.organization.services.ServiceAreaService serviceAreaService;
+    private AdminSeedService adminSeedService;
 
     @PostConstruct
     public void initDefaultConfig() {
@@ -121,16 +94,12 @@ public class AdminController {
     // 1. DASHBOARD & STATS ENDPOINTS
     // ==========================================
 
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class PlatformStats {
-        private long totalUsers;
-        private long totalBusinesses;
-        private long totalBookings;
-        private double totalCommissionEarnings;
-        private long pendingVerifications;
+    public record PlatformStats(
+            long totalUsers,
+            long totalBusinesses,
+            long totalBookings,
+            double totalCommissionEarnings,
+            long pendingVerifications) {
     }
 
     @GetMapping("/dashboard/stats")
@@ -140,25 +109,18 @@ public class AdminController {
         long totalBookings = bookingRepository.count();
         long pendingVerifications = businessRepository.findByVerified(false).size();
 
-        // Platform never takes a booking cut — businesses keep 100% of visit revenue.
+        // Platform never takes a booking cut - businesses keep 100% of visit revenue.
         double totalCommission = 0.0;
 
-        PlatformStats stats = PlatformStats.builder()
-                .totalUsers(totalUsers)
-                .totalBusinesses(totalBusinesses)
-                .totalBookings(totalBookings)
-                .totalCommissionEarnings(Math.round(totalCommission * 100.0) / 100.0)
-                .pendingVerifications(pendingVerifications)
-                .build();
-
-        return ResponseEntity.ok(stats);
+        return ResponseEntity.ok(new PlatformStats(
+                totalUsers,
+                totalBusinesses,
+                totalBookings,
+                Math.round(totalCommission * 100.0) / 100.0,
+                pendingVerifications));
     }
 
-    @Data
-    @Builder
-    public static class RecentRegistrationsResponse {
-        private List<User> users;
-        private List<Business> businesses;
+    public record RecentRegistrationsResponse(List<User> users, List<Business> businesses) {
     }
 
     @GetMapping("/dashboard/recent-registrations")
@@ -175,21 +137,14 @@ public class AdminController {
         rbacService.attachAppRoles(users);
         tenancyService.attachOwners(businesses);
 
-        RecentRegistrationsResponse response = RecentRegistrationsResponse.builder()
-                .users(users)
-                .businesses(businesses)
-                .build();
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(new RecentRegistrationsResponse(users, businesses));
     }
 
-    @Data
-    @AllArgsConstructor
-    public static class RevenueTrendPoint {
-        private String month;
-        private long bookings;
-        private double totalRevenue;
-        private double commissionEarnings;
+    public record RevenueTrendPoint(
+            String month,
+            long bookings,
+            double totalRevenue,
+            double commissionEarnings) {
     }
 
     @GetMapping("/dashboard/revenue-trend")
@@ -345,17 +300,13 @@ public class AdminController {
         return ResponseEntity.ok(businesses);
     }
 
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class BusinessDetailResponse {
-        private Business business;
-        private List<Branch> branches;
-        private List<Service> services;
-        private List<Staff> staff;
-        private List<Map<String, Object>> verificationDocuments;
-        private Map<String, Object> verificationReadiness;
+    public record BusinessDetailResponse(
+            Business business,
+            List<Branch> branches,
+            List<Service> services,
+            List<Staff> staff,
+            List<Map<String, Object>> verificationDocuments,
+            Map<String, Object> verificationReadiness) {
     }
 
     @GetMapping("/businesses/{id}")
@@ -394,16 +345,13 @@ public class AdminController {
                     return view;
                 })
                 .toList();
-        BusinessDetailResponse response = BusinessDetailResponse.builder()
-                .business(business)
-                .branches(branches)
-                .services(services)
-                .staff(staff)
-                .verificationDocuments(docs)
-                .verificationReadiness(verificationDocumentService.readiness(business))
-                .build();
-        
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(new BusinessDetailResponse(
+                business,
+                branches,
+                services,
+                staff,
+                docs,
+                verificationDocumentService.readiness(business)));
     }
 
     @PutMapping("/businesses/{id}/approve")
@@ -443,10 +391,7 @@ public class AdminController {
         return ResponseEntity.ok(new MessageResponse("Verified badge granted for " + business.getName() + "."));
     }
 
-    @Data
-    public static class DocumentReviewRequest {
-        private boolean approve;
-        private String notes;
+    public record DocumentReviewRequest(boolean approve, String notes) {
     }
 
     @PutMapping("/businesses/{businessId}/verification-documents/{documentId}/review")
@@ -464,8 +409,8 @@ public class AdminController {
             return ResponseEntity.status(403).body(new MessageResponse("Document does not belong to this business."));
         }
         User admin = userRepository.findById(adminDetails.getId()).orElseThrow();
-        boolean approve = body != null && body.isApprove();
-        String notes = body != null ? body.getNotes() : null;
+        boolean approve = body != null && body.approve();
+        String notes = body != null ? body.notes() : null;
         verificationDocumentService.review(document, admin, approve, notes);
         logAction(adminDetails.getId(), approve ? "APPROVE_KYC_DOC" : "REJECT_KYC_DOC",
                 "BusinessVerificationDocument", document.getId(),
@@ -477,9 +422,7 @@ public class AdminController {
         ));
     }
 
-    @Data
-    public static class RejectionRequest {
-        private String reason;
+    public record RejectionRequest(String reason) {
     }
 
     @PutMapping("/businesses/{id}/reject")
@@ -493,11 +436,13 @@ public class AdminController {
 
         business.setVerified(false);
         business.setStatus(BusinessStatus.REJECTED);
-        business.setRejectionReason(rejection.getReason());
+        business.setRejectionReason(rejection != null ? rejection.reason() : null);
         businessRepository.save(business);
 
-        logAction(adminDetails.getId(), "REJECT_BUSINESS", "Business", business.getId(), 
-                "Rejected business: " + business.getName() + ". Reason: " + rejection.getReason(), request.getRemoteAddr());
+        logAction(adminDetails.getId(), "REJECT_BUSINESS", "Business", business.getId(),
+                "Rejected business: " + business.getName() + ". Reason: "
+                        + (rejection != null ? rejection.reason() : null),
+                request.getRemoteAddr());
 
         return ResponseEntity.ok(new MessageResponse("Business " + business.getName() + " rejected."));
     }
@@ -588,435 +533,35 @@ public class AdminController {
                     .body(new MessageResponse("Seeding is disabled in production."));
         }
 
-        // Avoid duplicate seeding
-        if (userRepository.findByEmail("alice@hourslot.com").isPresent()) {
-            return ResponseEntity.badRequest().body(new MessageResponse("Database already seeded with mock data."));
+        if (adminSeedService.coreSeedAlreadyPresent()) {
+            int ensured = adminSeedService.ensureDemoSoloProviders();
+            return ResponseEntity.ok(new MessageResponse(
+                    "Core mock data already present."
+                            + (ensured > 0 ? " Ensured " + ensured + " missing solo demo account(s)." : "")));
         }
 
-        // 1. Seed Mock Users
-        // Owner 1
-        User ownerUser = User.builder()
-                .email("zenithowner@hourslot.com")
-                .passwordHash(encoder.encode("password123"))
-                .firstName("Robert")
-                .lastName("Kowalski")
-                .phoneNumber("+15551212")
-                .status("ACTIVE")
-                .build();
-        userRepository.save(ownerUser);
-
-        // Owner 2
-        User ownerUser2 = User.builder()
-                .email("elitedental@hourslot.com")
-                .passwordHash(encoder.encode("password123"))
-                .firstName("Dr. Fatima")
-                .lastName("Zahra")
-                .phoneNumber("+15551313")
-                .status("ACTIVE")
-                .build();
-        userRepository.save(ownerUser2);
-
-        // Staff 1
-        User staffUser = User.builder()
-                .email("johndoe@hourslot.com")
-                .passwordHash(encoder.encode("password123"))
-                .firstName("John")
-                .lastName("Doe")
-                .phoneNumber("+15551414")
-                .status("ACTIVE")
-                .build();
-        userRepository.save(staffUser);
-
-        // Customer 1
-        User custUser = User.builder()
-                .email("alice@hourslot.com")
-                .passwordHash(encoder.encode("password123"))
-                .firstName("Alice")
-                .lastName("Green")
-                .phoneNumber("+15550101")
-                .status("ACTIVE")
-                .build();
-        userRepository.save(custUser);
-        
-        customerProfileRepository.save(CustomerProfile.builder()
-                .user(custUser)
-                .addressLine1("101 Emerald St")
-                .gender("Female")
-                .dateOfBirth(LocalDate.of(1995, 8, 15))
-                .build());
-        rbacService.grantSystemRole(custUser, "CUSTOMER", null, null, null, null);
-
-        // Customer 2
-        User custUser2 = User.builder()
-                .email("bob@hourslot.com")
-                .passwordHash(encoder.encode("password123"))
-                .firstName("Bob")
-                .lastName("Miller")
-                .phoneNumber("+15550102")
-                .status("ACTIVE")
-                .build();
-        userRepository.save(custUser2);
-
-        customerProfileRepository.save(CustomerProfile.builder()
-                .user(custUser2)
-                .addressLine1("202 Sapphire Rd")
-                .gender("Male")
-                .dateOfBirth(LocalDate.of(1990, 4, 20))
-                .build());
-        rbacService.grantSystemRole(custUser2, "CUSTOMER", null, null, null, null);
-
-        // Seed Categories
-        Category salonCat = Category.builder()
-                .name("Salons")
-                .icon("fa-scissors")
-                .active(true)
-                .build();
-        categoryRepository.save(salonCat);
-
-        Category healthCat = Category.builder()
-                .name("Healthcare")
-                .icon("fa-user-doctor")
-                .active(true)
-                .build();
-        categoryRepository.save(healthCat);
-
-        // 2. Seed Mock Businesses
-        // Business 1 (Approved)
-        Organization org1 = tenancyService.provisionOrganization(ownerUser, "Zenith Hair Salon");
-        Organization org2 = tenancyService.provisionOrganization(ownerUser2, "Elite Dental Care");
-
-        Business business1 = Business.builder()
-                .name("Zenith Hair Salon")
-                .organization(org1)
-                .description("Luxury haircut, colors, and styling services in downtown.")
-                .primaryCategory(salonCat)
-                .status(BusinessStatus.APPROVED)
-                .verified(true)
-                .listingMode("BUSINESS")
-                .providerType("BUSINESS")
-                .serviceMode("AT_PROVIDER")
-                .publishStatus("PUBLISHED")
-                .ratingAvg(java.math.BigDecimal.valueOf(4.8))
-                .build();
-        business1 = businessRepository.save(business1);
-        business1.setVerified(true);
-        business1.setStatus(BusinessStatus.APPROVED);
-        business1.setPublishStatus("PUBLISHED");
-        business1 = businessRepository.save(business1);
-        mediaAssetService.replaceLogo(business1.getId(), "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=120");
-
-        Business business2 = Business.builder()
-                .name("Elite Dental Care")
-                .organization(org2)
-                .description("Advanced dental clinic specializing in implants and cosmetic smile alignment.")
-                .primaryCategory(healthCat)
-                .status(BusinessStatus.PENDING)
-                .verified(false)
-                .listingMode("BUSINESS")
-                .providerType("BUSINESS")
-                .serviceMode("AT_PROVIDER")
-                .publishStatus("DRAFT")
-                .build();
-        business2 = businessRepository.save(business2);
-        mediaAssetService.replaceLogo(business2.getId(), "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=120");
-
-        // 3. Seed Branches
-        Branch branch1 = Branch.builder()
-                .business(business1)
-                .name("Zenith Salon Downtown")
-                .address("123 Main St, San Francisco, CA")
-                .phoneNumber("+15553030")
-                .latitude(37.7749)
-                .longitude(-122.4194)
-                .build();
-        branchRepository.save(branch1);
-
-        Branch branch2 = Branch.builder()
-                .business(business2)
-                .name("Elite Dental Bay Area")
-                .address("456 Medical Blvd, San Francisco, CA")
-                .phoneNumber("+15554040")
-                .latitude(37.7849)
-                .longitude(-122.4094)
-                .build();
-        branchRepository.save(branch2);
-
-        // 4. Seed Services
-        Service service1 = Service.builder()
-                .name("Classic Haircut & Styling")
-                .description("Includes hairwash, styling, and premium massage.")
-                .basePrice(java.math.BigDecimal.valueOf(45.0))
-                .business(business1)
-                .durationMinutes(45)
-                .build();
-        serviceRepository.save(service1);
-
-        Service service2 = Service.builder()
-                .name("Full Hair Coloring")
-                .description("Professional highlights and base color treatment.")
-                .basePrice(java.math.BigDecimal.valueOf(120.0))
-                .business(business1)
-                .durationMinutes(90)
-                .build();
-        serviceRepository.save(service2);
-
-        Service service3 = Service.builder()
-                .name("Teeth Whitening")
-                .description("Laser cleaning and whitening treatment.")
-                .basePrice(java.math.BigDecimal.valueOf(180.0))
-                .business(business2)
-                .durationMinutes(60)
-                .build();
-        serviceRepository.save(service3);
-
-        // 5. Seed Staff
-        Staff staff1 = Staff.builder()
-                .branch(branch1)
-                .user(staffUser)
-                .displayName("John Doe")
-                .designation("Master Barber")
-                .ratingAvg(java.math.BigDecimal.valueOf(4.9))
-                .build();
-        staffRepository.save(staff1);
-        rbacService.grantSystemRole(staffUser, "STAFF", org1, business1, branch1, staff1);
-
-        Staff staff2 = Staff.builder()
-                .branch(branch1)
-                .displayName("Sarah Jenkins")
-                .designation("Senior Colorist")
-                .ratingAvg(java.math.BigDecimal.valueOf(4.7))
-                .build();
-        staffRepository.save(staff2);
-
-        seedBooking(custUser, business1, branch1, service1, staff1, LocalDateTime.now().minusMonths(3).withHour(10).withMinute(0), 45, BookingStatus.COMPLETED, 45.0);
-        seedBooking(custUser2, business1, branch1, service2, staff2, LocalDateTime.now().minusMonths(2).withHour(14).withMinute(0), 90, BookingStatus.COMPLETED, 120.0);
-        seedBooking(custUser, business1, branch1, service1, staff1, LocalDateTime.now().plusDays(2).withHour(11).withMinute(0), 45, BookingStatus.CONFIRMED, 45.0);
-
-        Category homeCat = Category.builder()
-                .name("Home services")
-                .icon("fa-house")
-                .active(true)
-                .build();
-        categoryRepository.save(homeCat);
-
-        User electricianOwner = User.builder()
-                .email("demo.electrician@hourslot.com")
-                .passwordHash(encoder.encode("password123"))
-                .firstName("Demo")
-                .lastName("Electrician")
-                .phoneNumber("+923001111111")
-                .status("ACTIVE")
-                .build();
-        userRepository.save(electricianOwner);
-        Business electrician = tenancyService.provisionIndividualProvider(
-                electricianOwner, "Demo Electrician Lahore", "PK", "Punjab", "Lahore", "Asia/Karachi", "PKR");
-        electrician.setPrimaryCategory(homeCat);
-        electrician.setDescription("Demo individual electrician covering named Lahore areas. Quote work is not slot-bookable.");
-        electrician.setServiceMode("CUSTOMER_LOCATION");
-        electrician.setStatus(BusinessStatus.APPROVED);
-        electrician.setPublishStatus("PUBLISHED");
-        electrician.setOnboardingState("PUBLISHED");
-        electrician.setYearsExperience(8);
-        electrician.setSlug("demo-electrician-lahore");
-        businessRepository.save(electrician);
-
-        Service wiringQuote = Service.builder()
-                .business(electrician)
-                .name("Demo wiring estimate")
-                .description("On-site assessment before quote. Requests arrive in Phase 2.")
-                .basePrice(java.math.BigDecimal.ZERO)
-                .currency("PKR")
-                .durationMinutes(60)
-                .pricingType("QUOTE")
-                .requiresQuote(true)
-                .serviceMode("CUSTOMER_LOCATION")
-                .allowsHomeService(true)
-                .build();
-        serviceRepository.save(wiringQuote);
-
-        Service outletFix = Service.builder()
-                .business(electrician)
-                .name("Demo outlet repair")
-                .description("Fixed-price visit for a single outlet repair.")
-                .basePrice(java.math.BigDecimal.valueOf(2500))
-                .currency("PKR")
-                .durationMinutes(45)
-                .pricingType("FIXED")
-                .serviceMode("CUSTOMER_LOCATION")
-                .allowsHomeService(true)
-                .build();
-        serviceRepository.save(outletFix);
-
-        geoAreaRepository.findActiveByCity("PK", "Lahore").stream().limit(2).forEach(area ->
-                serviceAreaService.create(electrician, com.hourslot.organization.model.BusinessServiceArea.builder()
-                        .coverageType("NAMED")
-                        .geoArea(area)
-                        .areaName(area.getName())
-                        .status("ACTIVE")
-                        .build()));
-
-        User cleanerOwner = User.builder()
-                .email("demo.cleaner@hourslot.com")
-                .passwordHash(encoder.encode("password123"))
-                .firstName("Demo")
-                .lastName("Cleaner")
-                .phoneNumber("+923002222222")
-                .status("ACTIVE")
-                .build();
-        userRepository.save(cleanerOwner);
-        Business cleaner = tenancyService.provisionIndividualProvider(
-                cleanerOwner, "Demo Cleaner Gulberg", "PK", "Punjab", "Lahore", "Asia/Karachi", "PKR");
-        cleaner.setPrimaryCategory(homeCat);
-        cleaner.setDescription("Demo hybrid cleaner with radius coverage and a bookable fixed home visit.");
-        cleaner.setServiceMode("HYBRID");
-        cleaner.setStatus(BusinessStatus.APPROVED);
-        cleaner.setPublishStatus("PUBLISHED");
-        cleaner.setOnboardingState("PUBLISHED");
-        cleaner.setYearsExperience(5);
-        cleaner.setTravelBufferMinutes(20);
-        cleaner.setSlug("demo-cleaner-gulberg");
-        businessRepository.save(cleaner);
-
-        Service deepClean = Service.builder()
-                .business(cleaner)
-                .name("Demo deep clean visit")
-                .description("Bookable fixed-price home clean on the implicit branch.")
-                .basePrice(java.math.BigDecimal.valueOf(4500))
-                .currency("PKR")
-                .durationMinutes(120)
-                .bufferMinutes(20)
-                .pricingType("FIXED")
-                .serviceMode("CUSTOMER_LOCATION")
-                .allowsHomeService(true)
-                .build();
-        serviceRepository.save(deepClean);
-
-        serviceAreaService.create(cleaner, com.hourslot.organization.model.BusinessServiceArea.builder()
-                .coverageType("RADIUS")
-                .areaName("Demo Gulberg radius")
-                .latitude(31.5102)
-                .longitude(74.3441)
-                .radiusKm(java.math.BigDecimal.valueOf(8))
-                .status("ACTIVE")
-                .build());
-
-        seedLahoreHomeDemo("demo.plumber@hourslot.com", "Plumber", "Demo Plumber Model Town",
-                "demo-plumber-model-town", homeCat, "Demo on-site plumbing diagnosis and repair.",
-                "Demo leak repair", "Fixed-price visit to stop a leaking tap or pipe joint.", 3200, 60);
-        seedLahoreHomeDemo("demo.ac@hourslot.com", "Technician", "Demo AC Repair Johar Town",
-                "demo-ac-johar-town", homeCat, "Demo AC service covering named Lahore areas.",
-                "Demo AC gas top-up quote", "Quote visit before refrigerant work.", 0, 50);
-        seedLahoreHomeDemo("demo.carpenter@hourslot.com", "Carpenter", "Demo Carpenter DHA",
-                "demo-carpenter-dha", homeCat, "Demo carpenter for furniture repair at the customer location.",
-                "Demo door hinge repair", "Fixed-price hinge and latch repair visit.", 2800, 75);
-
-        // 7. Write seed audit logs
-        logAction(adminDetails.getId(), "SEED_DATABASE", "System", 0L, 
+        AdminSeedService.SeedResult seeded = adminSeedService.seedCoreFixtures();
+        logAction(adminDetails.getId(), "SEED_DATABASE", "System", 0L,
                 "Successfully populated demo/mock database records.", request.getRemoteAddr());
-        logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", business1.getId(), 
+        logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", seeded.businessId(),
                 "Approved business: Zenith Hair Salon", request.getRemoteAddr());
-        logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", electrician.getId(),
+        logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", seeded.electricianId(),
                 "Approved demo individual: Demo Electrician Lahore", request.getRemoteAddr());
-        logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", cleaner.getId(),
+        logAction(adminDetails.getId(), "VERIFY_BUSINESS", "Business", seeded.cleanerId(),
                 "Approved demo individual: Demo Cleaner Gulberg", request.getRemoteAddr());
 
-        return ResponseEntity.ok(new MessageResponse("Database seeded successfully with customers, businesses, branches, services, staff, bookings, and audit records!"));
+        return ResponseEntity.ok(new MessageResponse(
+                "Database seeded successfully with customers, businesses, branches, services, staff, bookings, and audit records!"));
     }
-
-    private void seedLahoreHomeDemo(
-            String email, String lastName, String displayName, String slug, Category category,
-            String bio, String serviceName, String serviceDescription, double price, int durationMinutes) {
-        User owner = User.builder()
-                .email(email)
-                .passwordHash(encoder.encode("password123"))
-                .firstName("Demo")
-                .lastName(lastName)
-                .phoneNumber("+92300" + Math.abs(email.hashCode() % 1000000))
-                .status("ACTIVE")
-                .build();
-        userRepository.save(owner);
-        Business provider = tenancyService.provisionIndividualProvider(
-                owner, displayName, "PK", "Punjab", "Lahore", "Asia/Karachi", "PKR");
-        provider.setPrimaryCategory(category);
-        provider.setDescription(bio);
-        provider.setServiceMode("CUSTOMER_LOCATION");
-        provider.setStatus(BusinessStatus.APPROVED);
-        provider.setPublishStatus("PUBLISHED");
-        provider.setOnboardingState("PUBLISHED");
-        provider.setYearsExperience(6);
-        provider.setSlug(slug);
-        businessRepository.save(provider);
-
-        boolean quoteOnly = price <= 0;
-        serviceRepository.save(Service.builder()
-                .business(provider)
-                .name(serviceName)
-                .description(serviceDescription)
-                .basePrice(java.math.BigDecimal.valueOf(price))
-                .currency("PKR")
-                .durationMinutes(durationMinutes)
-                .pricingType(quoteOnly ? "QUOTE" : "FIXED")
-                .requiresQuote(quoteOnly)
-                .serviceMode("CUSTOMER_LOCATION")
-                .allowsHomeService(true)
-                .build());
-
-        geoAreaRepository.findActiveByCity("PK", "Lahore").stream().limit(2).forEach(area ->
-                serviceAreaService.create(provider, com.hourslot.organization.model.BusinessServiceArea.builder()
-                        .coverageType("NAMED")
-                        .geoArea(area)
-                        .areaName(area.getName())
-                        .status("ACTIVE")
-                        .build()));
-    }
-
-    // ==========================================
-    // HELPER METHODS
-    // ==========================================
 
     private void logAction(Long adminId, String action, String entity, Long entityId, String details, String ipAddress) {
         User admin = userRepository.findById(adminId).orElse(null);
-        AuditEvent log = AuditEvent.builder()
-                .actor(admin)
-                .action(action + " - " + details)
-                .entityType(entity)
-                .entityId(entityId)
-                .ipAddress(ipAddress)
-                .build();
+        AuditEvent log = new AuditEvent();
+        log.setActor(admin);
+        log.setAction(action + " - " + details);
+        log.setEntityType(entity);
+        log.setEntityId(entityId);
+        log.setIpAddress(ipAddress);
         auditEventRepository.save(log);
-    }
-
-    private void seedBooking(User customer, Business business, Branch branch, Service service, Staff staff,
-                             LocalDateTime start, int durationMinutes, BookingStatus status, double price) {
-        Booking booking = Booking.builder()
-                .customerUser(customer)
-                .organization(business.getOrganization())
-                .business(business)
-                .branch(branch)
-                .bookingTime(start)
-                .endTime(start.plusMinutes(durationMinutes))
-                .status(status)
-                .totalPrice(java.math.BigDecimal.valueOf(price))
-                .currency("USD")
-                .paymentStatus("PAID")
-                .paymentMethod("VENUE")
-                .source("MARKETPLACE")
-                .items(new java.util.ArrayList<>())
-                .build();
-        BookingItem item = BookingItem.builder()
-                .booking(booking)
-                .service(service)
-                .staff(staff)
-                .startTime(start)
-                .endTime(start.plusMinutes(durationMinutes))
-                .unitPrice(java.math.BigDecimal.valueOf(price))
-                .priceMultiplier(java.math.BigDecimal.ONE)
-                .lineTotal(java.math.BigDecimal.valueOf(price))
-                .sortOrder(0)
-                .build();
-        booking.getItems().add(item);
-        Booking saved = bookingRepository.save(booking);
-        saved.setPublicCode("HS" + String.format("%08d", saved.getId()));
-        bookingRepository.save(saved);
     }
 }

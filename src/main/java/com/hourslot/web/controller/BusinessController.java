@@ -257,6 +257,12 @@ public class BusinessController {
         
         User owner = userRepository.findById(userDetails.getId()).orElseThrow();
 
+        try {
+            tenancyService.assertCanCreateBusinessListing(owner);
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.badRequest().body(new MessageResponse(ex.getMessage()));
+        }
+
         if (businessRepository.existsByMemberUserId(owner.getId())) {
             return ResponseEntity
                     .badRequest()
@@ -393,6 +399,11 @@ public class BusinessController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
+        try {
+            tenancyService.rejectBusinessOnlyForIndividual(business);
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(403).body(new MessageResponse(ex.getMessage()));
+        }
         Organization organization = organizationOf(business);
         entitlementService.requireHeadroom(
                 organization,
@@ -513,6 +524,12 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
 
+        try {
+            tenancyService.rejectBusinessOnlyForIndividual(business);
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(403).body(new MessageResponse(ex.getMessage()));
+        }
+
         if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
@@ -562,6 +579,11 @@ public class BusinessController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = tenancyService.requireBusinessForUser(user);
         Organization organization = organizationOf(business);
+        try {
+            tenancyService.rejectBusinessOnlyForIndividual(business);
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(403).body(new MessageResponse(ex.getMessage()));
+        }
         return ResponseEntity.ok(staffInviteService.invite(
                 organization,
                 business,

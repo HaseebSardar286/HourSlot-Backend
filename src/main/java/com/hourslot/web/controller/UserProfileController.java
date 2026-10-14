@@ -7,6 +7,7 @@ import com.hourslot.identity.security.CustomUserDetails;
 import com.hourslot.notification.services.NotificationPreferenceService;
 import com.hourslot.organization.repository.BusinessRepository;
 import com.hourslot.organization.services.RbacService;
+import com.hourslot.organization.services.TenancyService;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,9 @@ public class UserProfileController {
 
     @Autowired
     private BusinessRepository businessRepository;
+
+    @Autowired
+    private TenancyService tenancyService;
 
     @Autowired
     private RbacService rbacService;
@@ -57,7 +61,16 @@ public class UserProfileController {
         body.put("lastName", user.getLastName());
         body.put("phoneNumber", user.getPhoneNumber());
         body.put("role", rbacService.resolveAppRole(user.getId()).name());
-        body.put("providerWorkspace", businessRepository.existsByMemberUserId(user.getId()));
+        body.put("providerIntent", user.getProviderIntent());
+        var businessOpt = tenancyService.findBusinessForUser(user);
+        body.put("providerWorkspace", businessOpt.isPresent());
+        body.put("listingMode", businessOpt.map(b -> b.getListingMode()).orElse(null));
+        body.put("providerType", businessOpt.map(b -> b.getProviderType()).orElse(null));
+        body.put("onboardingState", businessOpt.map(b -> b.getOnboardingState()).orElse(null));
+        body.put("isOnline", businessOpt.map(b -> b.isOnline()).orElse(null));
+        body.put("individualDisabled", businessOpt
+                .map(b -> b.getIndividualDisabledReason() != null && !b.getIndividualDisabledReason().isBlank())
+                .orElse(false));
         body.put("customerWorkspace", true);
         return ResponseEntity.ok(body);
     }

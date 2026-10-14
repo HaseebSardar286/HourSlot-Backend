@@ -112,6 +112,23 @@ public class RequestMatchingService {
             if (providerLinkRepository.findByRequestAndProvider(request.getId(), business.getId()).isPresent()) {
                 continue;
             }
+            if (business.getIndividualDisabledReason() != null
+                    && !business.getIndividualDisabledReason().isBlank()) {
+                continue;
+            }
+            String ops = business.getOpsStatus() == null ? "AVAILABLE" : business.getOpsStatus();
+            if ("UNAVAILABLE".equalsIgnoreCase(ops) || "VACATION".equalsIgnoreCase(ops)) {
+                continue;
+            }
+            if ("INDIVIDUAL".equalsIgnoreCase(business.getListingMode())) {
+                boolean online = business.isOnline()
+                        && business.getLastSeenAt() != null
+                        && business.getLastSeenAt().isAfter(LocalDateTime.now().minusMinutes(
+                                com.hourslot.organization.services.ProviderPresenceService.IDLE_TIMEOUT_MINUTES));
+                if (!online) {
+                    continue;
+                }
+            }
             MatchDecision decision = GeoCoverageMatcher.evaluate(
                     business.getServiceMode(),
                     business.isVerified(),

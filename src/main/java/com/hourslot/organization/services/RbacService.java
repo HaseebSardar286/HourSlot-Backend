@@ -20,7 +20,6 @@ public class RbacService {
 
     private static final List<String> PRIORITY = List.of(
             "SUPER_ADMIN",
-            "PLATFORM_ADMIN",
             "ORG_OWNER",
             "ORG_MANAGER",
             "BUSINESS_MANAGER",
@@ -90,7 +89,6 @@ public class RbacService {
                 .orElse("CUSTOMER");
         return switch (highest) {
             case "SUPER_ADMIN" -> UserRole.SUPER_ADMIN;
-            case "PLATFORM_ADMIN" -> UserRole.ADMIN;
             case "ORG_OWNER", "ORG_MANAGER", "BUSINESS_MANAGER", "BRANCH_MANAGER" -> UserRole.BUSINESS_OWNER;
             case "STAFF" -> UserRole.BUSINESS_STAFF;
             default -> UserRole.CUSTOMER;

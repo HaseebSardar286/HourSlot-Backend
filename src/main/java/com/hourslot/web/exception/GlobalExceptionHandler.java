@@ -68,6 +68,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleIllegalState(IllegalStateException ex) {
         log.warn("Illegal state: {}", ex.getMessage());
         String message = ex.getMessage() == null ? "Conflict." : ex.getMessage();
+        if (message.contains("solo workspace") || message.contains("Individual providers must use")
+                || message.contains("only available for individual")) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiError("SOLO_WORKSPACE_REQUIRED", message));
+        }
         if (message.contains("already owns") || message.contains("already in use")) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("CONFLICT", message));
         }

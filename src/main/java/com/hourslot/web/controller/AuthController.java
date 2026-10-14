@@ -21,6 +21,10 @@ import com.hourslot.notification.services.NotificationPreferenceService;
 import com.hourslot.organization.model.Organization;
 import com.hourslot.identity.model.PasswordResetToken;
 import com.hourslot.identity.repository.PasswordResetTokenRepository;
+import com.hourslot.organization.model.Branch;
+import com.hourslot.organization.repository.BranchRepository;
+import com.hourslot.organization.services.FeatureFlagService;
+import com.hourslot.organization.services.ProviderListingService;
 import com.hourslot.organization.services.RbacService;
 import com.hourslot.identity.dto.RegisterRequest;
 import com.hourslot.organization.model.Staff;
@@ -55,6 +59,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -93,6 +98,15 @@ public class AuthController {
 
     @Autowired
     private TenancyService tenancyService;
+
+    @Autowired
+    private ProviderListingService providerListingService;
+
+    @Autowired
+    private FeatureFlagService featureFlagService;
+
+    @Autowired
+    private BranchRepository branchRepository;
 
     @Autowired
     private RbacService rbacService;
@@ -143,21 +157,12 @@ public class AuthController {
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
 
-        // Retrieve extra metadata from User entity for the response
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         user.setLastLoginAt(LocalDateTime.now());
         userRepository.save(user);
         persistRefreshToken(user, refreshToken);
 
-        return ResponseEntity.ok(new LoginResponse(
-                jwt,
-                refreshToken,
-                userDetails.getId(),
-                userDetails.getEmail(),
-                userDetails.getRole().name(),
-                user.getFirstName(),
-                user.getLastName(),
-                roles));
+        return ResponseEntity.ok(buildLoginResponse(user, jwt, refreshToken, roles, userDetails.getRole().name()));
     }
 
     @PostMapping("/register")
@@ -169,24 +174,14 @@ public class AuthController {
                     .body(new MessageResponse("Error: Email is already in use!"));
         }
 
-        // Only allow self-registration as CUSTOMER or BUSINESS_OWNER
-        UserRole userRole = UserRole.CUSTOMER;
-        if (signUpRequest.getRole() != null) {
-            try {
-                userRole = UserRole.valueOf(signUpRequest.getRole().toUpperCase());
-            } catch (IllegalArgumentException e) {
-                return ResponseEntity
-                        .badRequest()
-                        .body(new MessageResponse("Error: Invalid role specified."));
-            }
-            if (userRole != UserRole.CUSTOMER && userRole != UserRole.BUSINESS_OWNER) {
-                return ResponseEntity
-                        .badRequest()
-                        .body(new MessageResponse("Error: Registration is limited to CUSTOMER or BUSINESS_OWNER roles."));
-            }
+        final String accountType;
+        try {
+            accountType = resolveAccountType(signUpRequest);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(new MessageResponse(ex.getMessage()));
         }
+        UserRole userRole = "BUSINESS".equals(accountType) ? UserRole.BUSINESS_OWNER : UserRole.CUSTOMER;
 
-        // Create new user's account
         User user = User.builder()
                 .email(signUpRequest.getEmail())
                 .passwordHash(encoder.encode(signUpRequest.getPassword()))
@@ -194,15 +189,58 @@ public class AuthController {
                 .lastName(signUpRequest.getLastName())
                 .phoneNumber(signUpRequest.getPhoneNumber())
                 .status("ACTIVE")
+                .providerIntent("INDIVIDUAL".equals(accountType) ? "INDIVIDUAL"
+                        : "BUSINESS".equals(accountType) ? "BUSINESS" : "CUSTOMER")
                 .build();
 
         User savedUser = userRepository.save(user);
 
+        // Dual identity: customers and individuals both get a customer profile
         if (userRole == UserRole.CUSTOMER) {
             customerProfileRepository.save(CustomerProfile.builder()
                     .user(savedUser)
                     .build());
             rbacService.grantSystemRole(savedUser, "CUSTOMER", null, null, null, null);
+        }
+
+        if ("INDIVIDUAL".equals(accountType)) {
+            if (!featureFlagService.isEnabled("individual_providers")) {
+                return ResponseEntity.status(403).body(new MessageResponse(
+                        "Individual provider registration is not currently available."));
+            }
+            String displayName = blankToNull(signUpRequest.getDisplayName());
+            if (displayName == null) {
+                displayName = ((savedUser.getFirstName() == null ? "" : savedUser.getFirstName()) + " "
+                        + (savedUser.getLastName() == null ? "" : savedUser.getLastName())).trim();
+            }
+            if (displayName.isBlank()) {
+                displayName = "Individual Provider";
+            }
+            Business business = tenancyService.provisionIndividualProvider(
+                    savedUser,
+                    displayName,
+                    signUpRequest.getCountryCode(),
+                    signUpRequest.getRegion(),
+                    signUpRequest.getCity(),
+                    signUpRequest.getTimezone(),
+                    signUpRequest.getCurrency());
+            String serviceMode = blankToNull(signUpRequest.getServiceMode());
+            if (serviceMode == null) {
+                serviceMode = "CUSTOMER_LOCATION";
+            }
+            String slug = blankToNull(signUpRequest.getSlug());
+            providerListingService.updateProfile(
+                    business,
+                    displayName,
+                    slug,
+                    signUpRequest.getBio(),
+                    serviceMode,
+                    signUpRequest.getYearsExperience(),
+                    signUpRequest.getPhoneNumber(),
+                    signUpRequest.getPrimaryCategoryId());
+            business = businessRepository.findById(business.getId()).orElse(business);
+            business.setOnboardingState("PROFILE_COMPLETE");
+            businessRepository.save(business);
         }
 
         if (userRole == UserRole.BUSINESS_OWNER) {
@@ -212,7 +250,11 @@ public class AuthController {
             }
 
             Category primaryCategory = null;
-            if (signUpRequest.getBusinessCategory() != null && !signUpRequest.getBusinessCategory().isBlank()) {
+            if (signUpRequest.getPrimaryCategoryId() != null) {
+                primaryCategory = categoryRepository.findById(signUpRequest.getPrimaryCategoryId()).orElse(null);
+            }
+            if (primaryCategory == null && signUpRequest.getBusinessCategory() != null
+                    && !signUpRequest.getBusinessCategory().isBlank()) {
                 String searchSlug = signUpRequest.getBusinessCategory().toLowerCase()
                         .replaceAll("[^a-z0-9\\s-]", "")
                         .replaceAll("\\s+", "-")
@@ -226,22 +268,104 @@ public class AuthController {
                 }
             }
 
-            Organization organization = tenancyService.provisionOrganization(savedUser, businessName);
+            Organization organization = tenancyService.provisionOrganization(
+                    savedUser,
+                    businessName,
+                    signUpRequest.getCurrency(),
+                    signUpRequest.getCountryCode(),
+                    signUpRequest.getRegion(),
+                    signUpRequest.getCity(),
+                    signUpRequest.getTimezone());
             Business business = Business.builder()
                     .name(businessName)
                     .organization(organization)
                     .description(signUpRequest.getBusinessDescription())
                     .registrationNumber(signUpRequest.getRegistrationNumber())
                     .primaryCategory(primaryCategory)
+                    .phone(signUpRequest.getPhoneNumber())
+                    .listingMode("BUSINESS")
+                    .providerType("BUSINESS")
                     .status(BusinessStatus.PENDING)
+                    .onboardingState("PROFILE_COMPLETE")
                     .build();
-            businessRepository.save(business);
+            business = businessRepository.save(business);
+
+            if (signUpRequest.getAddress() != null && !signUpRequest.getAddress().isBlank()
+                    && signUpRequest.getLatitude() != null && signUpRequest.getLongitude() != null) {
+                branchRepository.save(Branch.builder()
+                        .business(business)
+                        .name(blankToNull(signUpRequest.getBranchName()) == null
+                                ? "Main location" : signUpRequest.getBranchName().trim())
+                        .address(signUpRequest.getAddress().trim())
+                        .latitude(signUpRequest.getLatitude())
+                        .longitude(signUpRequest.getLongitude())
+                        .phoneNumber(signUpRequest.getPhoneNumber())
+                        .countryCode(blankToNull(signUpRequest.getCountryCode()) == null
+                                ? null : signUpRequest.getCountryCode().trim().toUpperCase())
+                        .region(blankToNull(signUpRequest.getRegion()))
+                        .city(blankToNull(signUpRequest.getCity()))
+                        .timezone(blankToNull(signUpRequest.getTimezone()))
+                        .build());
+            }
         }
 
         notificationPreferenceService.ensureDefaults(savedUser);
         issueEmailVerification(savedUser);
 
         return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String resolveAccountType(RegisterRequest request) {
+        if (request.getAccountType() != null && !request.getAccountType().isBlank()) {
+            String type = request.getAccountType().trim().toUpperCase();
+            if (!List.of("CUSTOMER", "INDIVIDUAL", "BUSINESS").contains(type)) {
+                throw new IllegalArgumentException("accountType must be CUSTOMER, INDIVIDUAL, or BUSINESS.");
+            }
+            return type;
+        }
+        if (request.getRole() != null && !request.getRole().isBlank()) {
+            String role = request.getRole().trim().toUpperCase();
+            if ("BUSINESS_OWNER".equals(role) || "BUSINESS".equals(role)) {
+                return "BUSINESS";
+            }
+            if ("INDIVIDUAL".equals(role)) {
+                return "INDIVIDUAL";
+            }
+            if ("CUSTOMER".equals(role)) {
+                return "CUSTOMER";
+            }
+            throw new IllegalArgumentException("Invalid role specified.");
+        }
+        return "CUSTOMER";
+    }
+
+    private LoginResponse buildLoginResponse(
+            User user, String jwt, String refreshToken, List<String> roles, String appRole) {
+        Optional<Business> business = tenancyService.findBusinessForUser(user);
+        String listingMode = business.map(Business::getListingMode).orElse(null);
+        String providerType = business.map(Business::getProviderType).orElse(null);
+        String onboardingState = business.map(Business::getOnboardingState).orElse(null);
+        Boolean online = business.map(Business::isOnline).orElse(null);
+        return LoginResponse.builder()
+                .token(jwt)
+                .refreshToken(refreshToken)
+                .id(user.getId())
+                .email(user.getEmail())
+                .role(appRole)
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .authorities(roles)
+                .listingMode(listingMode)
+                .providerType(providerType)
+                .providerIntent(user.getProviderIntent())
+                .onboardingState(onboardingState)
+                .providerWorkspace(business.isPresent())
+                .isOnline(online)
+                .build();
     }
 
     @GetMapping("/verify-email")

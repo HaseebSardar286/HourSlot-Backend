@@ -40,7 +40,7 @@ public class ProviderOpsController {
 
     @GetMapping("/api/provider/ops/today")
     public ResponseEntity<?> today(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(providerOpsService.today(requireBusiness(userDetails)));
+        return ResponseEntity.ok(providerOpsService.today(requireIndividual(userDetails)));
     }
 
     @GetMapping("/api/provider/ops/calendar")
@@ -53,38 +53,43 @@ public class ProviderOpsController {
         LocalDateTime end = to == null || to.isBlank()
                 ? startDate.plusMonths(1).atStartOfDay()
                 : LocalDate.parse(to).plusDays(1).atStartOfDay();
-        return ResponseEntity.ok(providerOpsService.calendar(requireBusiness(userDetails), start, end));
+        return ResponseEntity.ok(providerOpsService.calendar(requireIndividual(userDetails), start, end));
     }
 
     @GetMapping("/api/provider/ops/analytics")
     public ResponseEntity<?> analytics(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(providerOpsService.analytics(requireBusiness(userDetails)));
+        return ResponseEntity.ok(providerOpsService.analytics(requireIndividual(userDetails)));
     }
 
     @GetMapping("/api/provider/ops/quotes")
     public ResponseEntity<?> quotes(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(providerOpsService.quotes(requireBusiness(userDetails)));
+        return ResponseEntity.ok(providerOpsService.quotes(requireIndividual(userDetails)));
     }
 
     @GetMapping("/api/provider/ops/payments")
     public ResponseEntity<?> payments(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(providerOpsService.payments(requireBusiness(userDetails)));
+        return ResponseEntity.ok(providerOpsService.payments(requireIndividual(userDetails)));
     }
 
     @PatchMapping("/api/provider/ops/status")
     public ResponseEntity<?> status(
             @RequestBody OpsStatusBody body,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(providerOpsService.updateOpsStatus(requireBusiness(userDetails), body.getOpsStatus()));
+        return ResponseEntity.ok(providerOpsService.updateOpsStatus(requireIndividual(userDetails), body.getOpsStatus()));
     }
 
     @GetMapping("/api/provider/ops/customers")
     public ResponseEntity<?> customers(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(providerOpsService.customers(requireBusiness(userDetails)));
+        return ResponseEntity.ok(providerOpsService.customers(requireIndividual(userDetails)));
     }
 
-    private Business requireBusiness(CustomUserDetails userDetails) {
+    @GetMapping("/api/provider/ops/bookings")
+    public ResponseEntity<?> bookings(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(providerOpsService.bookings(requireIndividual(userDetails)));
+    }
+
+    private Business requireIndividual(CustomUserDetails userDetails) {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        return tenancyService.requireBusinessForUser(user);
+        return tenancyService.requireIndividualProvider(user);
     }
 }
