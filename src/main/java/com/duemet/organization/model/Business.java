@@ -1,0 +1,190 @@
+package com.duemet.organization.model;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.constraints.NotBlank;
+import lombok.*;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import com.duemet.catalog.model.Category;
+import com.duemet.identity.model.User;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "organization"})
+public class Business {
+
+    private Long id;
+
+    private Organization organization;
+
+    @NotBlank
+    private String name;
+
+    private String slug;
+
+    private String description;
+
+    @Builder.Default
+    private BusinessStatus status = BusinessStatus.PENDING;
+
+    private boolean verified;
+
+    private String rejectionReason;
+
+    private String registrationNumber;
+
+    private Category primaryCategory;
+
+    @JsonIgnoreProperties("subcategories")
+    @Builder.Default
+    private List<Category> secondaryCategories = new ArrayList<>();
+
+    @Builder.Default
+    private BigDecimal ratingAvg = BigDecimal.ZERO;
+
+    @Builder.Default
+    private int ratingCount = 0;
+
+    private String timezone;
+
+    private String locale;
+
+    /** BUSINESS | INDIVIDUAL */
+    @Builder.Default
+    private String listingMode = "BUSINESS";
+
+    /** INDIVIDUAL | SMALL_BUSINESS | BUSINESS | ENTERPRISE */
+    @Builder.Default
+    private String providerType = "BUSINESS";
+
+    /** AT_PROVIDER | CUSTOMER_LOCATION | REMOTE | HYBRID */
+    @Builder.Default
+    private String serviceMode = "AT_PROVIDER";
+
+    /** DRAFT | PUBLISHED | UNPUBLISHED */
+    @Builder.Default
+    private String publishStatus = "DRAFT";
+
+    @Builder.Default
+    private String onboardingState = "STARTED";
+
+    private Integer yearsExperience;
+
+    @Builder.Default
+    private int travelBufferMinutes = 0;
+
+    /** Taking urgent jobs until this time. Read-only here; written via BusinessRepository.setAvailableNowUntil. */
+    private LocalDateTime availableNowUntil;
+
+    /** Exposed to clients as "availableNow". */
+    public boolean isAvailableNow() {
+        return availableNowUntil != null && availableNowUntil.isAfter(LocalDateTime.now());
+    }
+
+    /** AVAILABLE | BUSY | UNAVAILABLE | VACATION */
+    @Builder.Default
+    private String opsStatus = "AVAILABLE";
+
+    @Builder.Default
+    private boolean online = false;
+
+    private LocalDateTime lastSeenAt;
+
+    private Double lastLatitude;
+
+    private Double lastLongitude;
+
+    /** LOGIN | HEARTBEAT | MANUAL_OFFLINE | LOGOUT | TIMEOUT */
+    private String presenceSource;
+
+    /** e.g. JOINED_ORG — retains listing while blocking independent operation. */
+    private String individualDisabledReason;
+
+    private String phone;
+
+    private Map<String, Object> settings;
+
+    private String logoUrl;
+
+    private String galleryUrls;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    @JsonIgnore
+    private LocalDateTime deletedAt;
+
+    /** API-only: populated by TenancyService for existing admin UI. */
+    private User owner;
+
+    @JsonProperty("commissionRate")
+    public double getCommissionRate() {
+        return 0.0;
+    }
+
+    @JsonProperty("category")
+    public String getCategory() {
+        return primaryCategory == null ? null : primaryCategory.getName();
+    }
+
+    @JsonProperty("rating")
+    public double getRating() {
+        return ratingAvg == null ? 0.0 : ratingAvg.doubleValue();
+    }
+
+    public void setRating(double rating) {
+        this.ratingAvg = BigDecimal.valueOf(rating);
+    }
+
+    @JsonProperty("currency")
+    public String getCurrency() {
+        if (organization != null && organization.getDefaultCurrency() != null
+                && !organization.getDefaultCurrency().isBlank()) {
+            return organization.getDefaultCurrency();
+        }
+        return "USD";
+    }
+
+    @JsonProperty("countryCode")
+    public String getCountryCode() {
+        return organization == null ? null : organization.getCountryCode();
+    }
+
+    public void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+        this.verified = false;
+        if (this.status == null) {
+            this.status = BusinessStatus.PENDING;
+        }
+        if (this.ratingAvg == null) {
+            this.ratingAvg = BigDecimal.ZERO;
+        }
+        if (this.slug == null || this.slug.isBlank()) {
+            this.slug = slugify(this.name);
+        }
+    }
+
+    private String slugify(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        return text.toLowerCase()
+                .replaceAll("[^a-z0-9\\s-]", "")
+                .replaceAll("\\s+", "-")
+                .replaceAll("-+", "-")
+                .trim();
+    }
+
+    public void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+}

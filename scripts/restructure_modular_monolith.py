@@ -1,17 +1,17 @@
-"""One-shot relocation of HourSlot sources into Maven modules. Packages stay com.hourslot.*."""
+"""One-shot relocation of Duemet sources into Maven modules. Packages stay com.duemet.*."""
 from __future__ import annotations
 
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OLD_MAIN = ROOT / "src" / "main" / "java" / "com" / "hourslot"
-OLD_TEST = ROOT / "src" / "test" / "java" / "com" / "hourslot"
+OLD_MAIN = ROOT / "src" / "main" / "java" / "com" / "duemet"
+OLD_TEST = ROOT / "src" / "test" / "java" / "com" / "duemet"
 OLD_RES = ROOT / "src" / "main" / "resources"
 
-# module -> list of paths relative to com/hourslot
+# module -> list of paths relative to com/duemet
 MAPPING: dict[str, list[str]] = {
-    "hourslot-common": [
+    "duemet-common": [
         "jdbc/JdbcSupport.java",
         "util/MoneyAmounts.java",
         "util/TokenHashes.java",
@@ -20,12 +20,12 @@ MAPPING: dict[str, list[str]] = {
         "config/DatabaseUrlParser.java",
         "service/PlanLimitException.java",
     ],
-    "hourslot-domain": [
+    "duemet-domain": [
         "jdbc/RowMappers.java",
         *[f"model/{p.name}" for p in sorted((OLD_MAIN / "model").glob("*.java"))],
         *[f"repository/{p.name}" for p in sorted((OLD_MAIN / "repository").glob("*.java"))],
     ],
-    "hourslot-identity": [
+    "duemet-identity": [
         "security/AuthRateLimitFilter.java",
         "security/CustomUserDetails.java",
         "security/CustomUserDetailsService.java",
@@ -40,22 +40,22 @@ MAPPING: dict[str, list[str]] = {
         "dto/MessageResponse.java",
         "dto/LoginResponse.java",
     ],
-    "hourslot-media": [
+    "duemet-media": [
         "service/ObjectStorageService.java",
         "service/MediaAssetService.java",
     ],
-    "hourslot-notification": [
+    "duemet-notification": [
         "service/MailService.java",
         "service/NotificationService.java",
         "service/NotificationPreferenceService.java",
     ],
-    "hourslot-geo": [
+    "duemet-geo": [
         "service/GeoCatalogService.java",
         "dto/geo/CountryView.java",
         "dto/geo/RegionView.java",
         "dto/geo/CurrencyView.java",
     ],
-    "hourslot-organization": [
+    "duemet-organization": [
         "service/TenancyService.java",
         "service/RbacService.java",
         "service/EntitlementService.java",
@@ -63,25 +63,25 @@ MAPPING: dict[str, list[str]] = {
         "service/VerificationDocumentService.java",
         "service/StaffInviteService.java",
     ],
-    "hourslot-catalog": [
+    "duemet-catalog": [
         "service/PricingService.java",
         "service/CatalogLocaleService.java",
     ],
-    "hourslot-availability": [
+    "duemet-availability": [
         "service/AvailabilityService.java",
         "service/ScheduleService.java",
         "service/SlotLockService.java",
     ],
-    "hourslot-booking": [
+    "duemet-booking": [
         "service/BookingService.java",
         "service/BookingStatusRules.java",
         "dto/DiscoverBranchResponse.java",
     ],
-    "hourslot-payment": [
+    "duemet-payment": [
         "service/PaymentService.java",
     ],
-    "hourslot-app": [
-        "HourSlotApplication.java",
+    "duemet-app": [
+        "DuemetApplication.java",
         "config/SecurityConfig.java",
         "config/JacksonConfig.java",
         "config/WebConfig.java",
@@ -91,32 +91,32 @@ MAPPING: dict[str, list[str]] = {
 }
 
 TEST_MAPPING: dict[str, list[str]] = {
-    "hourslot-booking": ["service/BookingStatusTransitionTest.java"],
-    "hourslot-identity": ["security/JwtTokenTypeTest.java"],
+    "duemet-booking": ["service/BookingStatusTransitionTest.java"],
+    "duemet-identity": ["security/JwtTokenTypeTest.java"],
 }
 
 PACKAGE_INFO = {
-    "hourslot-common": ("com.hourslot.common", "Shared kernel: JDBC helpers, errors, config loaders. No domain services."),
-    "hourslot-domain": ("com.hourslot.domain", "Shared persistence: entities, repositories, row mappers. One database for the monolith."),
-    "hourslot-identity": ("com.hourslot.identity", "Auth, JWT, customer/user DTOs. Future identity service."),
-    "hourslot-media": ("com.hourslot.media", "Object storage and media assets. Future media service."),
-    "hourslot-notification": ("com.hourslot.notification", "In-app, email, preferences. Future notification service."),
-    "hourslot-geo": ("com.hourslot.geo", "Countries, regions, currencies. Future geo service."),
-    "hourslot-organization": ("com.hourslot.organization", "Orgs, businesses, staff, RBAC, plans, KYC. Future tenant service."),
-    "hourslot-catalog": ("com.hourslot.catalog", "Categories, services, packages, peak pricing. Future catalog service."),
-    "hourslot-availability": ("com.hourslot.availability", "Hours, holidays, slot generation and locks. Future availability service."),
-    "hourslot-booking": ("com.hourslot.booking", "Bookings, reviews, favorites, discovery DTO. Future booking service."),
-    "hourslot-payment": ("com.hourslot.payment", "Stripe and payment records. Future payment service."),
-    "hourslot-app": ("com.hourslot.app", "Composition root: HTTP, security config, Flyway. Replaceable by an API gateway later."),
+    "duemet-common": ("com.duemet.common", "Shared kernel: JDBC helpers, errors, config loaders. No domain services."),
+    "duemet-domain": ("com.duemet.domain", "Shared persistence: entities, repositories, row mappers. One database for the monolith."),
+    "duemet-identity": ("com.duemet.identity", "Auth, JWT, customer/user DTOs. Future identity service."),
+    "duemet-media": ("com.duemet.media", "Object storage and media assets. Future media service."),
+    "duemet-notification": ("com.duemet.notification", "In-app, email, preferences. Future notification service."),
+    "duemet-geo": ("com.duemet.geo", "Countries, regions, currencies. Future geo service."),
+    "duemet-organization": ("com.duemet.organization", "Orgs, businesses, staff, RBAC, plans, KYC. Future tenant service."),
+    "duemet-catalog": ("com.duemet.catalog", "Categories, services, packages, peak pricing. Future catalog service."),
+    "duemet-availability": ("com.duemet.availability", "Hours, holidays, slot generation and locks. Future availability service."),
+    "duemet-booking": ("com.duemet.booking", "Bookings, reviews, favorites, discovery DTO. Future booking service."),
+    "duemet-payment": ("com.duemet.payment", "Stripe and payment records. Future payment service."),
+    "duemet-app": ("com.duemet.app", "Composition root: HTTP, security config, Flyway. Replaceable by an API gateway later."),
 }
 
 
 def java_dest(module: str, rel: str) -> Path:
-    return ROOT / module / "src" / "main" / "java" / "com" / "hourslot" / rel
+    return ROOT / module / "src" / "main" / "java" / "com" / "duemet" / rel
 
 
 def test_dest(module: str, rel: str) -> Path:
-    return ROOT / module / "src" / "test" / "java" / "com" / "hourslot" / rel
+    return ROOT / module / "src" / "test" / "java" / "com" / "duemet" / rel
 
 
 def write_package_info(module: str, package: str, doc: str) -> None:
@@ -151,7 +151,7 @@ def main() -> None:
         for rel in rels:
             move_file(OLD_TEST / rel, test_dest(module, rel))
 
-    app_res = ROOT / "hourslot-app" / "src" / "main" / "resources"
+    app_res = ROOT / "duemet-app" / "src" / "main" / "resources"
     app_res.mkdir(parents=True, exist_ok=True)
     if OLD_RES.exists():
         for item in OLD_RES.iterdir():

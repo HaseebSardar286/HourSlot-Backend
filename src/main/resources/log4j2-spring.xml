@@ -11,8 +11,8 @@
         </Console>
 
         <RollingFile name="File"
-                     fileName="${LOG_DIR}/hourslot.log"
-                     filePattern="${LOG_DIR}/hourslot-%d{yyyy-MM-dd}-%i.log.gz">
+                     fileName="${LOG_DIR}/duemet.log"
+                     filePattern="${LOG_DIR}/duemet-%d{yyyy-MM-dd}-%i.log.gz">
             <PatternLayout pattern="${LOG_PATTERN}"/>
             <Policies>
                 <TimeBasedTriggeringPolicy interval="1"/>
@@ -24,26 +24,26 @@
 
     <Loggers>
         <!-- Application code -->
-        <Logger name="com.hourslot" level="INFO" additivity="false">
+        <Logger name="com.duemet" level="INFO" additivity="false">
             <AppenderRef ref="Console"/>
             <AppenderRef ref="File"/>
         </Logger>
         <!-- SQL in console; JdbcSupport still skips auth/poll queries -->
-        <Logger name="com.hourslot.jdbc" level="INFO" additivity="false">
+        <Logger name="com.duemet.jdbc" level="INFO" additivity="false">
             <AppenderRef ref="Console"/>
             <AppenderRef ref="File"/>
         </Logger>
 
         <!-- Useful for debugging auth, bookings, payments -->
-        <Logger name="com.hourslot.controller" level="INFO" additivity="false">
+        <Logger name="com.duemet.controller" level="INFO" additivity="false">
             <AppenderRef ref="Console"/>
             <AppenderRef ref="File"/>
         </Logger>
-        <Logger name="com.hourslot.service" level="INFO" additivity="false">
+        <Logger name="com.duemet.service" level="INFO" additivity="false">
             <AppenderRef ref="Console"/>
             <AppenderRef ref="File"/>
         </Logger>
-        <Logger name="com.hourslot.security" level="INFO" additivity="false">
+        <Logger name="com.duemet.security" level="INFO" additivity="false">
             <AppenderRef ref="Console"/>
             <AppenderRef ref="File"/>
         </Logger>

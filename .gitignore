@@ -77,3 +77,6 @@ Thumbs.db
 .env.local
 .env.*.local
 !.env.example
+
+# Uploaded user files (KYC documents etc.) — never commit
+uploads/

@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = ROOT / "src" / "main" / "java" / "com" / "hourslot"
+BASE = ROOT / "src" / "main" / "java" / "com" / "duemet"
 
 MODULES = [
     "availability",
@@ -30,8 +30,8 @@ def main() -> None:
         mod_dir = BASE / mod
         services_dir = mod_dir / "services"
         services_dir.mkdir(parents=True, exist_ok=True)
-        old_pkg = f"com.hourslot.{mod}"
-        new_pkg = f"com.hourslot.{mod}.services"
+        old_pkg = f"com.duemet.{mod}"
+        new_pkg = f"com.duemet.{mod}.services"
 
         names = {p.name for p in mod_dir.glob("*Service.java")}
         names.update(EXTRA.get(mod, []))

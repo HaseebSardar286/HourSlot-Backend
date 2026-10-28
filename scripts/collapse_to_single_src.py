@@ -11,7 +11,7 @@ SRC_TEST = ROOT / "src" / "test" / "java"
 SRC_RES = ROOT / "src" / "main" / "resources"
 
 # Simple class name -> new fully-qualified package (without class)
-# Format: "ClassName" -> "com.hourslot.module.sub"
+# Format: "ClassName" -> "com.duemet.module.sub"
 CLASS_PKG: dict[str, str] = {}
 
 def map_cls(name: str, pkg: str) -> None:
@@ -19,99 +19,99 @@ def map_cls(name: str, pkg: str) -> None:
 
 # --- shared ---
 for n in ["JdbcSupport", "RowMappers"]:
-    map_cls(n, "com.hourslot.shared.jdbc")
+    map_cls(n, "com.duemet.shared.jdbc")
 for n in ["EnvFileLoader", "DatabaseUrlParser"]:
-    map_cls(n, "com.hourslot.shared.config")
-map_cls("ApiError", "com.hourslot.shared.exception")
-map_cls("PlanLimitException", "com.hourslot.shared.exception")
+    map_cls(n, "com.duemet.shared.config")
+map_cls("ApiError", "com.duemet.shared.exception")
+map_cls("PlanLimitException", "com.duemet.shared.exception")
 for n in ["MoneyAmounts", "TokenHashes"]:
-    map_cls(n, "com.hourslot.shared.util")
+    map_cls(n, "com.duemet.shared.util")
 
 # --- identity ---
 for n in ["AuthEntryPointJwt", "AuthRateLimitFilter", "AuthTokenFilter", "CustomUserDetails", "JwtUtils"]:
-    map_cls(n, "com.hourslot.identity.security")
+    map_cls(n, "com.duemet.identity.security")
 for n in ["LoginRequest", "LoginResponse", "MessageResponse", "RegisterRequest",
           "TokenRefreshRequest", "TokenRefreshResponse", "CustomerView"]:
-    map_cls(n, "com.hourslot.identity.dto")
+    map_cls(n, "com.duemet.identity.dto")
 for n in ["User", "UserRole", "AuthRefreshToken", "PasswordResetToken",
           "EmailVerificationToken", "CustomerProfile"]:
-    map_cls(n, "com.hourslot.identity.model")
+    map_cls(n, "com.duemet.identity.model")
 for n in ["UserRepository", "AuthRefreshTokenRepository", "PasswordResetTokenRepository",
           "EmailVerificationTokenRepository", "CustomerProfileRepository"]:
-    map_cls(n, "com.hourslot.identity.repository")
+    map_cls(n, "com.duemet.identity.repository")
 
 # --- organization ---
 for n in ["TenancyService", "RbacService", "EntitlementService", "SystemSettingService",
           "VerificationDocumentService", "StaffInviteService"]:
-    map_cls(n, "com.hourslot.organization")
+    map_cls(n, "com.duemet.organization")
 for n in ["Organization", "OrganizationMember", "Business", "BusinessStatus", "Branch", "Staff",
           "StaffInvite", "BusinessVerificationDocument", "Permission", "Role", "MemberRole",
           "SubscriptionPlan", "PlanEntitlement", "OrganizationSubscription", "SystemSetting",
           "AuditEvent"]:
-    map_cls(n, "com.hourslot.organization.model")
+    map_cls(n, "com.duemet.organization.model")
 for n in ["OrganizationRepository", "OrganizationMemberRepository", "BusinessRepository",
           "BranchRepository", "StaffRepository", "StaffInviteRepository",
           "BusinessVerificationDocumentRepository", "RoleRepository", "MemberRoleRepository",
           "SubscriptionPlanRepository", "PlanEntitlementRepository",
           "OrganizationSubscriptionRepository", "SystemSettingRepository", "AuditEventRepository"]:
-    map_cls(n, "com.hourslot.organization.repository")
+    map_cls(n, "com.duemet.organization.repository")
 
 # --- catalog ---
 for n in ["PricingService", "CatalogLocaleService"]:
-    map_cls(n, "com.hourslot.catalog")
+    map_cls(n, "com.duemet.catalog")
 for n in ["Category", "Service", "ServicePackage", "CustomerPackage", "StaffService",
           "TimeOfDayPricing"]:
-    map_cls(n, "com.hourslot.catalog.model")
+    map_cls(n, "com.duemet.catalog.model")
 for n in ["CategoryRepository", "ServiceRepository", "ServicePackageRepository",
           "CustomerPackageRepository", "StaffServiceRepository", "TimeOfDayPricingRepository"]:
-    map_cls(n, "com.hourslot.catalog.repository")
+    map_cls(n, "com.duemet.catalog.repository")
 
 # --- geo ---
-map_cls("GeoCatalogService", "com.hourslot.geo")
+map_cls("GeoCatalogService", "com.duemet.geo")
 for n in ["CountryView", "RegionView", "CurrencyView"]:
-    map_cls(n, "com.hourslot.geo.dto")
+    map_cls(n, "com.duemet.geo.dto")
 
 # --- availability ---
 for n in ["AvailabilityService", "ScheduleService", "SlotLockService"]:
-    map_cls(n, "com.hourslot.availability")
+    map_cls(n, "com.duemet.availability")
 for n in ["BranchWorkingHour", "BranchWorkingInterval", "BranchBreak", "BranchHoliday",
           "StaffWorkingHour", "StaffWorkingInterval", "StaffBreak", "StaffTimeOff"]:
-    map_cls(n, "com.hourslot.availability.model")
+    map_cls(n, "com.duemet.availability.model")
 for n in ["BranchWorkingHourRepository", "BranchBreakRepository", "BranchHolidayRepository",
           "StaffWorkingHourRepository", "StaffBreakRepository", "StaffTimeOffRepository"]:
-    map_cls(n, "com.hourslot.availability.repository")
+    map_cls(n, "com.duemet.availability.repository")
 
 # --- booking ---
 for n in ["BookingService", "BookingStatusRules"]:
-    map_cls(n, "com.hourslot.booking")
-map_cls("DiscoverBranchResponse", "com.hourslot.booking.dto")
+    map_cls(n, "com.duemet.booking")
+map_cls("DiscoverBranchResponse", "com.duemet.booking.dto")
 for n in ["Booking", "BookingItem", "BookingStatus", "BookingStatusHistory", "Review", "Favorite"]:
-    map_cls(n, "com.hourslot.booking.model")
+    map_cls(n, "com.duemet.booking.model")
 for n in ["BookingRepository", "BookingStatusHistoryRepository", "ReviewRepository", "FavoriteRepository"]:
-    map_cls(n, "com.hourslot.booking.repository")
+    map_cls(n, "com.duemet.booking.repository")
 
 # --- payment ---
-map_cls("PaymentService", "com.hourslot.payment")
+map_cls("PaymentService", "com.duemet.payment")
 for n in ["Payment", "PaymentRefund"]:
-    map_cls(n, "com.hourslot.payment.model")
+    map_cls(n, "com.duemet.payment.model")
 for n in ["PaymentRepository", "PaymentRefundRepository"]:
-    map_cls(n, "com.hourslot.payment.repository")
+    map_cls(n, "com.duemet.payment.repository")
 
 # --- media ---
 for n in ["MediaAssetService", "ObjectStorageService"]:
-    map_cls(n, "com.hourslot.media")
+    map_cls(n, "com.duemet.media")
 for n in ["MediaAsset", "BusinessMedia"]:
-    map_cls(n, "com.hourslot.media.model")
+    map_cls(n, "com.duemet.media.model")
 for n in ["MediaAssetRepository", "BusinessMediaRepository"]:
-    map_cls(n, "com.hourslot.media.repository")
+    map_cls(n, "com.duemet.media.repository")
 
 # --- notification ---
 for n in ["MailService", "NotificationService", "NotificationPreferenceService"]:
-    map_cls(n, "com.hourslot.notification")
+    map_cls(n, "com.duemet.notification")
 for n in ["Notification", "NotificationPreference"]:
-    map_cls(n, "com.hourslot.notification.model")
+    map_cls(n, "com.duemet.notification.model")
 for n in ["NotificationRepository", "NotificationPreferenceRepository"]:
-    map_cls(n, "com.hourslot.notification.repository")
+    map_cls(n, "com.duemet.notification.repository")
 
 # --- web ---
 CONTROLLERS = [
@@ -122,42 +122,42 @@ CONTROLLERS = [
     "VerificationDocumentController",
 ]
 for n in CONTROLLERS:
-    map_cls(n, "com.hourslot.web.controller")
+    map_cls(n, "com.duemet.web.controller")
 for n in ["SecurityConfig", "JacksonConfig", "WebConfig"]:
-    map_cls(n, "com.hourslot.web.config")
-map_cls("GlobalExceptionHandler", "com.hourslot.web.exception")
-map_cls("CustomUserDetailsService", "com.hourslot.web.security")
+    map_cls(n, "com.duemet.web.config")
+map_cls("GlobalExceptionHandler", "com.duemet.web.exception")
+map_cls("CustomUserDetailsService", "com.duemet.web.security")
 
-# HourSlotApplication stays at com.hourslot
-map_cls("HourSlotApplication", "com.hourslot")
+# DuemetApplication stays at com.duemet
+map_cls("DuemetApplication", "com.duemet")
 
 # Old package prefixes that may appear as wildcards / imports
 OLD_PREFIXES = [
-    "com.hourslot.model",
-    "com.hourslot.repository",
-    "com.hourslot.service",
-    "com.hourslot.controller",
-    "com.hourslot.security",
-    "com.hourslot.dto.geo",
-    "com.hourslot.dto",
-    "com.hourslot.jdbc",
-    "com.hourslot.util",
-    "com.hourslot.config",
-    "com.hourslot.exception",
+    "com.duemet.model",
+    "com.duemet.repository",
+    "com.duemet.service",
+    "com.duemet.controller",
+    "com.duemet.security",
+    "com.duemet.dto.geo",
+    "com.duemet.dto",
+    "com.duemet.jdbc",
+    "com.duemet.util",
+    "com.duemet.config",
+    "com.duemet.exception",
 ]
 
 PACKAGE_INFOS = {
-    "com.hourslot.shared": "Shared kernel: JDBC, config loaders, errors, utils.",
-    "com.hourslot.identity": "Auth identity: users, JWT, login DTOs.",
-    "com.hourslot.organization": "Tenancy, businesses, staff, RBAC, plans, KYC.",
-    "com.hourslot.catalog": "Categories, services, packages, peak pricing.",
-    "com.hourslot.geo": "Country / region / currency catalog.",
-    "com.hourslot.availability": "Working hours, holidays, slot generation and locks.",
-    "com.hourslot.booking": "Bookings, reviews, favorites, discovery DTOs.",
-    "com.hourslot.payment": "Stripe and payment records.",
-    "com.hourslot.media": "Object storage and media assets.",
-    "com.hourslot.notification": "In-app notifications and email.",
-    "com.hourslot.web": "HTTP adapters: controllers, security wiring, exception handler.",
+    "com.duemet.shared": "Shared kernel: JDBC, config loaders, errors, utils.",
+    "com.duemet.identity": "Auth identity: users, JWT, login DTOs.",
+    "com.duemet.organization": "Tenancy, businesses, staff, RBAC, plans, KYC.",
+    "com.duemet.catalog": "Categories, services, packages, peak pricing.",
+    "com.duemet.geo": "Country / region / currency catalog.",
+    "com.duemet.availability": "Working hours, holidays, slot generation and locks.",
+    "com.duemet.booking": "Bookings, reviews, favorites, discovery DTOs.",
+    "com.duemet.payment": "Stripe and payment records.",
+    "com.duemet.media": "Object storage and media assets.",
+    "com.duemet.notification": "In-app notifications and email.",
+    "com.duemet.web": "HTTP adapters: controllers, security wiring, exception handler.",
 }
 
 
@@ -167,7 +167,7 @@ def pkg_to_path(pkg: str) -> Path:
 
 def collect_java_files() -> list[tuple[Path, bool]]:
     files: list[tuple[Path, bool]] = []
-    for mod in sorted(ROOT.glob("hourslot-*")):
+    for mod in sorted(ROOT.glob("duemet-*")):
         for p in (mod / "src" / "main" / "java").rglob("*.java"):
             if p.name == "package-info.java":
                 continue
@@ -183,17 +183,17 @@ def rewrite_content(text: str, class_name: str, new_pkg: str) -> str:
 
     # Replace FQCN imports of known classes
     for cls, pkg in CLASS_PKG.items():
-        # import com.hourslot....Class;
+        # import com.duemet....Class;
         text = re.sub(
-            rf"import\s+com\.hourslot(?:\.[\w]+)*\.{cls}\s*;",
+            rf"import\s+com\.duemet(?:\.[\w]+)*\.{cls}\s*;",
             f"import {pkg}.{cls};",
             text,
         )
 
     # Replace wildcard imports with expanded imports for classes we know lived there
-    # import com.hourslot.model.*;
-    # import com.hourslot.repository.*;
-    # import com.hourslot.service.*;
+    # import com.duemet.model.*;
+    # import com.duemet.repository.*;
+    # import com.duemet.service.*;
     def expand_wildcard(match: re.Match) -> str:
         old = match.group(1)
         needed = []
@@ -216,30 +216,30 @@ def rewrite_content(text: str, class_name: str, new_pkg: str) -> str:
                 lines.append(line)
         return "\n".join(lines) if lines else ""
 
-    text = re.sub(r"import\s+(com\.hourslot\.(?:model|repository|service))\.\*\s*;", expand_wildcard, text)
+    text = re.sub(r"import\s+(com\.duemet\.(?:model|repository|service))\.\*\s*;", expand_wildcard, text)
 
     # Fix remaining old-style single imports that used intermediate packages we changed
-    # e.g. import com.hourslot.service.BookingService;
+    # e.g. import com.duemet.service.BookingService;
     for cls, pkg in CLASS_PKG.items():
         text = re.sub(
-            rf"import\s+com\.hourslot\.(?:model|repository|service|controller|security|jdbc|util|config|exception|dto(?:\.geo)?)\.{cls}\s*;",
+            rf"import\s+com\.duemet\.(?:model|repository|service|controller|security|jdbc|util|config|exception|dto(?:\.geo)?)\.{cls}\s*;",
             f"import {pkg}.{cls};",
             text,
         )
 
     # Static / type references with FQCN in code (rare)
     for cls, pkg in CLASS_PKG.items():
-        text = text.replace(f"com.hourslot.model.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.repository.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.service.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.controller.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.security.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.jdbc.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.util.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.config.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.exception.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.dto.geo.{cls}", f"{pkg}.{cls}")
-        text = text.replace(f"com.hourslot.dto.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.model.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.repository.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.service.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.controller.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.security.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.jdbc.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.util.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.config.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.exception.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.dto.geo.{cls}", f"{pkg}.{cls}")
+        text = text.replace(f"com.duemet.dto.{cls}", f"{pkg}.{cls}")
 
     # Clean duplicate imports
     lines = text.splitlines(keepends=True)
@@ -271,9 +271,9 @@ def write_package_info(pkg: str, doc: str) -> None:
 
 def merge_resources() -> None:
     SRC_RES.mkdir(parents=True, exist_ok=True)
-    app_res = ROOT / "hourslot-app" / "src" / "main" / "resources"
+    app_res = ROOT / "duemet-app" / "src" / "main" / "resources"
     if not app_res.exists():
-        raise SystemExit("hourslot-app resources missing")
+        raise SystemExit("duemet-app resources missing")
     for item in app_res.iterdir():
         dest = SRC_RES / item.name
         if dest.exists():
@@ -289,9 +289,9 @@ def process_file(src: Path, is_test: bool) -> None:
     if class_name not in CLASS_PKG:
         # Tests named differently
         if class_name == "BookingStatusTransitionTest":
-            new_pkg = "com.hourslot.booking"
+            new_pkg = "com.duemet.booking"
         elif class_name == "JwtTokenTypeTest":
-            new_pkg = "com.hourslot.identity.security"
+            new_pkg = "com.duemet.identity.security"
         else:
             raise SystemExit(f"Unmapped class: {src}")
     else:
@@ -307,7 +307,7 @@ def process_file(src: Path, is_test: bool) -> None:
 
 
 def delete_modules() -> None:
-    for mod in ROOT.glob("hourslot-*"):
+    for mod in ROOT.glob("duemet-*"):
         shutil.rmtree(mod, ignore_errors=True)
 
 
@@ -334,12 +334,12 @@ def second_pass_fix_imports() -> None:
                     lines.append(line)
             return "\n".join(lines)
 
-        text = re.sub(r"import\s+com\.hourslot\.(?:model|repository|service)\.\*\s*;", expand, text)
+        text = re.sub(r"import\s+com\.duemet\.(?:model|repository|service)\.\*\s*;", expand, text)
 
         # Fix any leftover old imports
         for cls, pkg in CLASS_PKG.items():
             text = re.sub(
-                rf"import\s+com\.hourslot\.(?:model|repository|service|controller|security|jdbc|util|config|exception|dto(?:\.geo)?)\.{cls}\s*;",
+                rf"import\s+com\.duemet\.(?:model|repository|service|controller|security|jdbc|util|config|exception|dto(?:\.geo)?)\.{cls}\s*;",
                 f"import {pkg}.{cls};",
                 text,
             )

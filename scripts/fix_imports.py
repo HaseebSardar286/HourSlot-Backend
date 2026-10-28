@@ -67,47 +67,47 @@ def insert_imports(text: str, imports: list[str]) -> str:
 
 def fix_service_ambiguity(text: str, pkg: str) -> str:
     has_spring = "import org.springframework.stereotype.Service;" in text
-    has_model = "import com.hourslot.catalog.model.Service;" in text
+    has_model = "import com.duemet.catalog.model.Service;" in text
     uses_model = bool(re.search(r"(?<![\w.])Service(?![\w])", text)) and (
         "ServiceRepository" in text or "catalog.model.Service" in text or has_model
         or re.search(r"\bService\b\s+\w+", text)
     )
-    if not (has_spring and (has_model or "com.hourslot.catalog.model.Service" in text or uses_model)):
+    if not (has_spring and (has_model or "com.duemet.catalog.model.Service" in text or uses_model)):
         # If only spring Service annotation and also catalog Service type used without import
         if has_spring and uses_model and "ServiceRepository" in text:
             # remove model import if present; qualify type usages that are not annotations
-            text = text.replace("import com.hourslot.catalog.model.Service;\n", "")
-            # Qualify field/param/return types: Service foo -> com.hourslot.catalog.model.Service foo
+            text = text.replace("import com.duemet.catalog.model.Service;\n", "")
+            # Qualify field/param/return types: Service foo -> com.duemet.catalog.model.Service foo
             # Careful not to touch @Service
             def qual(m: re.Match) -> str:
-                return f"{m.group(1)}com.hourslot.catalog.model.Service{m.group(2)}"
+                return f"{m.group(1)}com.duemet.catalog.model.Service{m.group(2)}"
             text = re.sub(
                 r"(?<![\w.@])(Service)(\s+[a-zA-Z_]\w*)",
-                lambda m: m.group(0) if False else f"com.hourslot.catalog.model.Service{m.group(2)}",
+                lambda m: m.group(0) if False else f"com.duemet.catalog.model.Service{m.group(2)}",
                 text,
             )
             # Fix @Service that may have been broken - shouldn't happen with (?<!@)
-            text = text.replace("@com.hourslot.catalog.model.Service", "@Service")
+            text = text.replace("@com.duemet.catalog.model.Service", "@Service")
             # Fix import lines / annotations wrongly qualified
             text = re.sub(
                 r"(?<![\w.@])Service(\s+[a-z]\w*\s*[=;,\)])",
-                r"com.hourslot.catalog.model.Service\1",
+                r"com.duemet.catalog.model.Service\1",
                 text,
             )
             # Optional generics List<Service>
-            text = re.sub(r"\bList<Service>", "List<com.hourslot.catalog.model.Service>", text)
-            text = re.sub(r"\bOptional<Service>", "Optional<com.hourslot.catalog.model.Service>", text)
-            text = re.sub(r"\bSet<Service>", "Set<com.hourslot.catalog.model.Service>", text)
+            text = re.sub(r"\bList<Service>", "List<com.duemet.catalog.model.Service>", text)
+            text = re.sub(r"\bOptional<Service>", "Optional<com.duemet.catalog.model.Service>", text)
+            text = re.sub(r"\bSet<Service>", "Set<com.duemet.catalog.model.Service>", text)
         return text
 
     # Both imports present — drop model import and qualify usages
-    text = text.replace("import com.hourslot.catalog.model.Service;\n", "")
-    text = re.sub(r"\bList<Service>", "List<com.hourslot.catalog.model.Service>", text)
-    text = re.sub(r"\bOptional<Service>", "Optional<com.hourslot.catalog.model.Service>", text)
-    text = re.sub(r"\bSet<Service>", "Set<com.hourslot.catalog.model.Service>", text)
+    text = text.replace("import com.duemet.catalog.model.Service;\n", "")
+    text = re.sub(r"\bList<Service>", "List<com.duemet.catalog.model.Service>", text)
+    text = re.sub(r"\bOptional<Service>", "Optional<com.duemet.catalog.model.Service>", text)
+    text = re.sub(r"\bSet<Service>", "Set<com.duemet.catalog.model.Service>", text)
     text = re.sub(
         r"(?<![\w.@])Service(\s+[a-z]\w*)",
-        r"com.hourslot.catalog.model.Service\1",
+        r"com.duemet.catalog.model.Service\1",
         text,
     )
     return text
@@ -121,7 +121,7 @@ def fix_file(path: Path) -> None:
     self_name = path.stem
 
     # Remove bad wildcard
-    text = re.sub(r"^import\s+com\.hourslot\.dto\.\*\s*;\s*\n", "", text, flags=re.M)
+    text = re.sub(r"^import\s+com\.duemet\.dto\.\*\s*;\s*\n", "", text, flags=re.M)
 
     # Fix Service ambiguity first
     text = fix_service_ambiguity(text, pkg)
@@ -147,9 +147,9 @@ def fix_file(path: Path) -> None:
             needed.append(fqcn)
 
     # Special: GlobalExceptionHandler needs ApiError
-    if self_name == "GlobalExceptionHandler" and "com.hourslot.shared.exception.ApiError" not in current_imports(text):
+    if self_name == "GlobalExceptionHandler" and "com.duemet.shared.exception.ApiError" not in current_imports(text):
         if "ApiError" in text:
-            needed.append("com.hourslot.shared.exception.ApiError")
+            needed.append("com.duemet.shared.exception.ApiError")
 
     # Deduplicate
     needed = [n for n in needed if n not in current_imports(text)]

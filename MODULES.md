@@ -1,12 +1,12 @@
-# HourSlot backend — single-src modular monolith
+# Duemet backend — single-src modular monolith
 
 One Maven project, one `pom.xml`, one `src`, one main class. Domain boundaries are **Java packages**, not separate JARs.
 
 ```text
-HourSlot-Backend/
+Duemet-Backend/
   pom.xml
-  src/main/java/com/hourslot/
-    HourSlotApplication.java
+  src/main/java/com/duemet/
+    DuemetApplication.java
     shared/
     identity/
     organization/      # tenancy, businesses, staff, RBAC, plans, KYC, provider ops, usage

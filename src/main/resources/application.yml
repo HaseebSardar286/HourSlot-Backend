@@ -1,9 +1,11 @@
 server:
   port: 8090
+  # Set FORWARD_HEADERS_STRATEGY=native only when running behind a trusted reverse proxy.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}
 
 spring:
   application:
-    name: hourslot-backend
+    name: duemet-backend
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
@@ -14,11 +16,8 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   jpa:
-    open-in-view: true
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+    open-in-view: false
+    show-sql: false
 
   flyway:
     enabled: true
@@ -50,12 +49,16 @@ spring:
             enable: true
 
 app:
+  # Zone the JVM runs in; booking wall-clock times are interpreted in this zone.
+  timezone: ${APP_TIMEZONE:Asia/Karachi}
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
   security:
+    # Mark session cookies Secure (HTTPS only). Set true in any deployed environment.
+    cookie-secure: ${COOKIE_SECURE:false}
     jwt:
       secret: ${JWT_SECRET}
-      expiration-ms: 86400000
-      refresh-expiration-ms: 604800000 
+      expiration-ms: ${JWT_EXPIRATION_MS:900000}
+      refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   upload:
@@ -71,11 +74,21 @@ app:
     chunked-encoding: false
     folders:
       verification: verification
-      business-profile: bussiness_profile
+      profile: profile
+      categories: categories
+      request-media: request_media
   stripe:
     secret-key: ${STRIPE_SECRET_KEY:}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
     commission-percentage: 0.0
+  push:
+    vapid-public-key: ${VAPID_PUBLIC_KEY:}
+    vapid-private-key: ${VAPID_PRIVATE_KEY:}
+    # Contact for push services: mailto: address or https: site URL. Defaults to the frontend URL.
+    vapid-subject: ${VAPID_SUBJECT:}
+  whatsapp:
+    verify-token: ${WHATSAPP_VERIFY_TOKEN:}
+    app-secret: ${WHATSAPP_APP_SECRET:}
 
 logging:
   config: classpath:log4j2-spring.xml
@@ -87,10 +100,16 @@ spring:
       on-profile: dev
   flyway:
     enabled: true
+  jpa:
+    show-sql: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+app:
+  otp:
+    # Print sign-in codes in the dev log so you can test without working email.
+    log-codes: true
 
 ---
 spring:

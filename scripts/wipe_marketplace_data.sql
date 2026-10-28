@@ -1,6 +1,6 @@
--- Wipe marketplace/account data while keeping platform reference data
+-- Wipe marketplace/account data while keeping platform essentials
 -- (roles, permissions, plans, entitlements, feature_flags, system_settings,
---  nav_menus, categories, geo_areas, flyway).
+--  nav_menus, service categories, flyway). Reviews and demo geo/community rows are cleared.
 -- IMPORTANT: do not use TRUNCATE ... CASCADE — roles/settings have FKs to users/orgs/businesses.
 -- businesses/organizations/users cannot be TRUNCATEd while roles/settings reference them; use DELETE.
 
@@ -86,6 +86,12 @@ RESTART IDENTITY;
 DELETE FROM businesses;
 DELETE FROM organizations;
 DELETE FROM users;
+
+-- Keep service categories (platform taxonomy). Clear only demo geo / community labels.
+UPDATE businesses SET primary_category_id = NULL WHERE primary_category_id IS NOT NULL;
+DELETE FROM business_categories;
+DELETE FROM geo_areas WHERE slug LIKE 'demo-%' OR name ILIKE 'Demo %';
+DELETE FROM communities WHERE slug = 'karachi-home-services';
 
 -- Reset identity sequences for delete targets
 ALTER TABLE businesses ALTER COLUMN id RESTART WITH 1;
